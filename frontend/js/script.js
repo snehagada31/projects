@@ -1,4 +1,4 @@
-const API_BASE = "https://projects-h6bp.onrender.com/feed?cursor=0&limit=100";
+const API_BASE = "https://projects-h6bp.onrender.com/feed?cursor=0&limit=10";
 
 const feed = document.querySelector(".feed");
 const loadedFeed = document.getElementById("loaded-feed");
