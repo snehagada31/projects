@@ -1,3 +1,4 @@
+
 """
 Topic 14 — FastAPI backend for the infinite-scroll feed.
 Imports and wires together models.py, paginator.py, cache.py.
@@ -70,6 +71,14 @@ MOCK_POSTS = make_mock_posts(100)
 
 @cache_feed(ttl=30)
 async def fetch_posts(cursor: int, limit: int):
+    # This whole function body only runs on a cache MISS — cache_feed
+    # skips it entirely on a HIT. So shuffling here means: the feed only
+    # reshuffles when the cache actually expires (every 30s), not on
+    # every single request. This is what keeps cache hit/miss behavior
+    # fully intact AND makes the feed visibly change over time.
+    if cursor == 0:
+        random.shuffle(MOCK_POSTS)
+
     await asyncio.sleep(0.3)  # simulated I/O latency — this is why async matters
 
     for batch in paginate_posts(MOCK_POSTS[cursor:], batch_size=limit):
