@@ -1,0 +1,576 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: black;
+  color: #e7e9ea;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  margin: 0;
+}
+
+.app-layout {
+  display: flex;
+  justify-content: center;
+  max-width: 1265px;
+  margin: 0 auto;
+}
+
+/* ---------- left sidebar ---------- */
+.sidebar {
+  width: 275px;
+  flex-shrink: 0;
+  padding: 12px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar__logo {
+  font-size: 28px;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+}
+
+.sidebar__nav {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sidebar__nav li a {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  color: white;
+  text-decoration: none;
+  font-size: 19px;
+  padding: 12px;
+  border-radius: 999px;
+  margin-bottom: 2px;
+}
+
+.sidebar__nav li a:hover {
+  background: #181818;
+}
+
+.sidebar__nav li a.active {
+  font-weight: 700;
+}
+
+.sidebar__post-btn {
+  width: 90%;
+  margin: 16px auto 0;
+  background: #1d9bf0;
+  color: white;
+  border: none;
+  font-weight: 700;
+  font-size: 17px;
+  padding: 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.sidebar__post-btn:hover {
+  background: #1a8cd8;
+}
+
+.sidebar__user {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 999px;
+}
+
+.sidebar__user:hover {
+  background: #181818;
+  cursor: pointer;
+}
+
+/* ---------- middle feed ---------- */
+.feed {
+  max-width: 600px;
+  width: 100%;
+  min-height: 100vh;
+  border-left: 1px solid #2f3336;
+  border-right: 1px solid #2f3336;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #2f3336;
+  position: sticky;
+  top: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 10;
+}
+
+header button {
+  font-size: 18px;
+  border-radius: 50%;
+  padding: 6px;
+}
+
+header button:hover {
+  background: #181818;
+}
+
+header h1 {
+  font-size: 20px;
+  font-weight: 800;
+  margin: 0;
+}
+
+.tweet {
+  border-bottom: 1px solid #2f3336;
+  padding: 12px 16px;
+  transition: background 0.15s;
+}
+
+.tweet:hover {
+  background: #080808;
+}
+
+.tweet--reply {
+  padding-left: 32px;
+  border-left: 2px solid #2f3336;
+  margin-left: 16px;
+}
+
+.tweet-author {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tweet-author-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.tweet-author-info span:first-child {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.tweet-author-info span:last-child {
+  color: #71767b;
+  font-size: 14px;
+}
+
+.tweet p {
+  font-size: 15px;
+  line-height: 1.4;
+  margin: 8px 0;
+}
+
+.tweet-photo {
+  width: 100%;
+  max-height: 300px;
+  object-fit: cover;
+  border-radius: 16px;
+  border: 1px solid #2f3336;
+  margin: 8px 0;
+  display: block;
+}
+
+.tweet-actions {
+  display: flex;
+  gap: 48px;
+  padding-top: 8px;
+  max-width: 320px;
+}
+
+.tweet-actions button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #71767b;
+  border-radius: 999px;
+  padding: 4px 6px;
+}
+
+.tweet-actions button:hover,
+.tweet-actions button:focus-visible {
+  color: #1d9bf0;
+  background: rgba(29, 155, 240, 0.1);
+}
+
+.action-like:hover,
+.action-like:focus-visible {
+  color: #f91880;
+  background: rgba(249, 24, 128, 0.1);
+}
+
+.action-retweet:hover,
+.action-retweet:focus-visible {
+  color: #00ba7c;
+  background: rgba(0, 186, 124, 0.1);
+}
+
+.liked { color: #f91880 !important; }
+.retweeted { color: #00ba7c !important; }
+
+button {
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  object-fit: cover;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.delete-btn {
+  color: #f4212e;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.delete-btn:hover {
+  text-decoration: underline;
+}
+
+.feed-status {
+  text-align: center;
+  color: #71767b;
+  font-size: 13px;
+  padding: 20px;
+}
+
+/* ---------- reply modal ---------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 80px;
+  z-index: 100;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-content {
+  background: black;
+  border: 1px solid #2f3336;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 500px;
+  padding: 20px;
+  position: relative;
+}
+
+#modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 16px;
+  border-radius: 50%;
+  padding: 6px 10px;
+}
+
+#modal-close:hover {
+  background: #181818;
+}
+
+.modal-replying-to {
+  color: #71767b;
+  font-size: 14px;
+  margin: 24px 0 12px;
+}
+
+#modal-form {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+#modal-form textarea {
+  flex: 1;
+  background: black;
+  color: white;
+  border: none;
+  font-size: 16px;
+  min-height: 80px;
+  resize: vertical;
+}
+
+#modal-form textarea:focus {
+  outline: none;
+}
+
+#modal-form button[type="submit"] {
+  background: #1d9bf0;
+  color: white;
+  font-weight: 700;
+  padding: 8px 18px;
+  border-radius: 999px;
+}
+
+#modal-form button[type="submit"]:hover {
+  background: #1a8cd8;
+}
+
+/* ---------- right panel ---------- */
+.right-panel {
+  width: 300px;
+  flex-shrink: 0;
+  padding: 12px;
+  /* sticky: scrolls with the page normally, then locks in place once it
+     reaches the top — so it moves while you scroll the main feed, but
+     doesn't keep scrolling past its own content or drift independently */
+  position: sticky;
+  top: 12px;
+  align-self: flex-start;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #16181c;
+  border-radius: 999px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+}
+
+.search-bar__icon {
+  font-size: 14px;
+  color: #71767b;
+}
+
+.search-bar input {
+  flex: 1;
+  background: none;
+  border: none;
+  color: white;
+  font-size: 15px;
+}
+
+.search-bar input:focus {
+  outline: none;
+}
+
+.right-panel__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #71767b;
+}
+
+.right-panel__footer a {
+  color: #71767b;
+  text-decoration: none;
+}
+
+.right-panel__footer a:hover {
+  text-decoration: underline;
+}
+
+.right-panel__box {
+  background: #16181c;
+  border-radius: 16px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.right-panel__box h2 {
+  font-size: 19px;
+  margin: 4px 8px 12px;
+}
+
+.trend {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  border-radius: 8px;
+}
+
+.trend:hover {
+  background: #1c1f23;
+  cursor: pointer;
+}
+
+.trend__category,
+.trend__meta {
+  font-size: 13px;
+  color: #71767b;
+}
+
+.trend__title {
+  font-weight: 700;
+  font-size: 15px;
+  margin: 2px 0;
+}
+
+.follow-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+}
+
+.follow-suggestion:hover {
+  background: #1c1f23;
+  cursor: pointer;
+}
+
+.avatar--sm {
+  width: 32px;
+  height: 32px;
+}
+
+.follow-suggestion .tweet-author-info {
+  flex: 1;
+}
+
+.follow-btn {
+  background: white;
+  color: black;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 999px;
+}
+
+.show-more {
+  display: block;
+  color: #1d9bf0;
+  text-decoration: none;
+  font-size: 15px;
+  padding: 12px 8px;
+  border-top: 1px solid #2f3336;
+  margin-top: 4px;
+}
+
+.show-more:hover {
+  background: #1c1f23;
+  border-radius: 0 0 16px 16px;
+}
+
+/* Tablet range: keep all THREE columns side by side (like a real tablet
+   view of X), just shrink the right panel and feed a bit so they fit —
+   this is why 1024px (iPad Pro) now still shows the right column instead
+   of it dropping below. */
+@media (max-width: 1000px) {
+  .right-panel {
+    width: 240px;
+  }
+  .feed {
+    max-width: 480px;
+  }
+}
+
+/* Only below 850px does the right panel actually give up being a side
+   column and stack below the feed instead — this is the point where
+   three columns genuinely can't fit side by side anymore. */
+@media (max-width: 850px) {
+  .app-layout {
+    flex-wrap: wrap;
+  }
+
+  .right-panel {
+    position: static;
+    width: 100%;
+    flex-basis: 100%;
+    order: 3;
+    max-height: none;
+    overflow: visible;
+    border-top: 1px solid #2f3336;
+    padding: 16px 12px 80px;
+  }
+
+  .feed {
+    max-width: 600px; /* back to full size once it's not sharing a row with the right panel */
+  }
+}
+
+@media (max-width: 700px) {
+  /* Below 700px, the sidebar stops being a side column entirely and
+     becomes a bottom tab bar instead — same pattern X's own mobile app
+     uses. This avoids the sidebar ever getting squeezed or pushed off
+     screen by the feed competing for the same horizontal space. */
+  .sidebar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: auto;
+    width: 100%;
+    height: 56px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0;
+    border-top: 1px solid #2f3336;
+    background: black;
+    z-index: 50;
+  }
+
+  .sidebar__logo,
+  .sidebar__post-btn,
+  .sidebar__user {
+    display: none; /* no room for these in a bottom bar — icons only */
+  }
+
+  .sidebar__nav {
+    display: flex;
+    width: 100%;
+    justify-content: space-around;
+  }
+
+  .sidebar__nav li a {
+    padding: 10px;
+    font-size: 22px;
+  }
+
+  .sidebar__nav li a span {
+    display: none; /* icon only, no text label — no horizontal room */
+  }
+
+  /* leave room at the bottom of the feed so the last tweet isn't
+     hidden underneath the fixed bottom bar */
+  .feed {
+    padding-bottom: 56px;
+  }
+}
+
+@media (max-width: 600px) {
+  .feed {
+    border-left: none;
+    border-right: none;
+  }
+}
