@@ -1,5 +1,19 @@
+# Environments and secrets
+.env
+.venv/
+venv/
+
+# Python cache
 __pycache__/
-*.pyc
-.vscode/
-node_modules/ 
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Node / Frontend
+node_modules/
 dist/
+.vite/
+
+# Editor
+.vscode/
+.idea/
