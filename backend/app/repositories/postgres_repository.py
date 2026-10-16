@@ -8,7 +8,8 @@ from sqlalchemy import select, func, and_, or_, desc, delete
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.db.models import User, Post, PostMedia, Like, Follow
+from app.db.models import User, Post, PostMedia, Like, Follow, UserSession
+
 
 
 class PostgresSocialRepository:
@@ -247,4 +248,79 @@ class PostgresSocialRepository:
         stmt = select(User).order_by(User.handle)
         res = await self.session.execute(stmt)
         return list(res.scalars().all())
+
+    async def get_user_by_handle(self, handle: str) -> User | None:
+        stmt = select(User).where(User.handle == handle.strip().lower())
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none()
+
+    async def get_user_model(self, user_id: uuid.UUID | str) -> User | None:
+        uid = uuid.UUID(str(user_id)) if isinstance(user_id, str) else user_id
+        stmt = select(User).where(User.id == uid)
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none()
+
+    async def create_user(
+        self,
+        handle: str,
+        display_name: str,
+        password_hash: str,
+        bio: str | None = None,
+        avatar_small_url: str = "https://api.dicebear.com/7.x/avataaars/svg?seed=user",
+        avatar_large_url: str = "https://api.dicebear.com/7.x/avataaars/svg?seed=user",
+    ) -> User:
+        user = User(
+            handle=handle.strip().lower(),
+            display_name=display_name.strip(),
+            password_hash=password_hash,
+            bio=bio.strip() if bio else None,
+            avatar_small_url=avatar_small_url,
+            avatar_large_url=avatar_large_url,
+        )
+        self.session.add(user)
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user
+
+    async def create_session(self, user_id: uuid.UUID, token_hash: str, expires_at: datetime) -> UserSession:
+        user_session = UserSession(
+            user_id=user_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+        )
+        self.session.add(user_session)
+        await self.session.commit()
+        await self.session.refresh(user_session)
+        return user_session
+
+    async def get_active_session(self, token_hash: str) -> UserSession | None:
+        stmt = (
+            select(UserSession)
+            .options(selectinload(UserSession.user))
+            .where(
+                and_(
+                    UserSession.token_hash == token_hash,
+                    UserSession.revoked_at.is_(None),
+                    UserSession.expires_at > func.now(),
+                )
+            )
+        )
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none()
+
+    async def revoke_session(self, token_hash: str) -> bool:
+        stmt = select(UserSession).where(
+            and_(
+                UserSession.token_hash == token_hash,
+                UserSession.revoked_at.is_(None),
+            )
+        )
+        res = await self.session.execute(stmt)
+        sess = res.scalar_one_or_none()
+        if not sess:
+            return False
+        sess.revoked_at = func.now()
+        await self.session.commit()
+        return True
+
 

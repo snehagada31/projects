@@ -44,3 +44,13 @@ class ConflictError(AppError):
 class ServiceUnavailableError(AppError):
     code = "SERVICE_UNAVAILABLE"
     status_code = 503
+
+
+class AuthenticationError(AppError):
+    code = "UNAUTHORIZED"
+    status_code = 401
+
+
+class AuthorizationError(AppError):
+    code = "FORBIDDEN"
+    status_code = 403

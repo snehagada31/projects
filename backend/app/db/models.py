@@ -34,9 +34,11 @@ class User(Base):
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_small_url: Mapped[str] = mapped_column(Text, nullable=False)
     avatar_large_url: Mapped[str] = mapped_column(Text, nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True, precision=3), nullable=False, server_default=sql_text("now()"))
 
     __table_args__ = (
+
         CheckConstraint("handle = lower(handle)", name="handle_is_lowercase"),
         CheckConstraint("length(trim(handle)) > 0", name="handle_not_empty"),
     )
@@ -109,3 +111,16 @@ class Follow(Base):
     __table_args__ = (
         CheckConstraint("follower_id <> following_id", name="no_self_follow"),
     )
+
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=sql_text("gen_random_uuid()"))
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True, precision=3), nullable=False, server_default=sql_text("now()"))
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True, precision=3), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True, precision=3), nullable=True)
+
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])

@@ -66,7 +66,13 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Handles FastAPI's default 404 (unmatched route) and any explicit
     HTTPException raised anywhere in the app, mapping the status code to
     the matching envelope code."""
-    code_by_status = {404: "NOT_FOUND", 409: "CONFLICT", 503: "SERVICE_UNAVAILABLE"}
+    code_by_status = {
+        401: "UNAUTHORIZED",
+        403: "FORBIDDEN",
+        404: "NOT_FOUND",
+        409: "CONFLICT",
+        503: "SERVICE_UNAVAILABLE",
+    }
     code = code_by_status.get(exc.status_code, "INTERNAL_ERROR")
     message = str(exc.detail) if exc.detail else "error"
     return _respond(request, exc.status_code, code, message)

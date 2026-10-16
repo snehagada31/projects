@@ -1,3 +1,4 @@
+
 """
 Explicit seed command: seeds PostgreSQL with the exact reviewed fixture data.
 Can be executed via: python -m app.db.seed
