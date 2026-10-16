@@ -17,7 +17,11 @@ class PostgresSocialRepository:
         self.session = session
 
     async def get_user(self, user_id: str) -> dict | None:
-        stmt = select(User).where(User.id == uuid.UUID(user_id))
+        try:
+            uid = uuid.UUID(user_id)
+        except (ValueError, TypeError):
+            return None
+        stmt = select(User).where(and_(User.id == uid, User.is_active.is_(True)))
         res = await self.session.execute(stmt)
         user = res.scalar_one_or_none()
         if not user:
@@ -29,6 +33,7 @@ class PostgresSocialRepository:
             "bio": user.bio,
             "avatar": {"small_url": user.avatar_small_url, "large_url": user.avatar_large_url},
         }
+
 
     async def get_post(self, post_id: str) -> Post | None:
         stmt = select(Post).options(selectinload(Post.author)).where(Post.id == uuid.UUID(post_id))
@@ -297,11 +302,13 @@ class PostgresSocialRepository:
         stmt = (
             select(UserSession)
             .options(selectinload(UserSession.user))
+            .join(User, UserSession.user_id == User.id)
             .where(
                 and_(
                     UserSession.token_hash == token_hash,
                     UserSession.revoked_at.is_(None),
                     UserSession.expires_at > func.now(),
+                    User.is_active.is_(True),
                 )
             )
         )
@@ -322,5 +329,52 @@ class PostgresSocialRepository:
         sess.revoked_at = func.now()
         await self.session.commit()
         return True
+
+    async def update_user_profile(
+        self,
+        user_id: uuid.UUID | str,
+        display_name: str | None = None,
+        bio: str | None = None,
+        avatar_small_url: str | None = None,
+        avatar_large_url: str | None = None,
+    ) -> User | None:
+        uid = uuid.UUID(str(user_id)) if isinstance(user_id, str) else user_id
+        stmt = select(User).where(and_(User.id == uid, User.is_active.is_(True)))
+        res = await self.session.execute(stmt)
+        user = res.scalar_one_or_none()
+        if not user:
+            return None
+        if display_name is not None:
+            user.display_name = display_name
+        if bio is not None:
+            user.bio = bio
+        if avatar_small_url is not None:
+            user.avatar_small_url = avatar_small_url
+        if avatar_large_url is not None:
+            user.avatar_large_url = avatar_large_url
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user
+
+    async def deactivate_user(self, user_id: uuid.UUID | str) -> bool:
+        uid = uuid.UUID(str(user_id)) if isinstance(user_id, str) else user_id
+        stmt = select(User).where(User.id == uid)
+        res = await self.session.execute(stmt)
+        user = res.scalar_one_or_none()
+        if not user:
+            return False
+        user.is_active = False
+
+        # Revoke all active sessions for this user
+        sess_stmt = select(UserSession).where(
+            and_(UserSession.user_id == uid, UserSession.revoked_at.is_(None))
+        )
+        sess_res = await self.session.execute(sess_stmt)
+        for s in sess_res.scalars().all():
+            s.revoked_at = func.now()
+
+        await self.session.commit()
+        return True
+
 
 

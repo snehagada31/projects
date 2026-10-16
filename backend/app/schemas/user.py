@@ -4,7 +4,33 @@ User-related response shapes, matching the brief exactly:
 - UserProfile: the fuller shape returned by GET /users/{id}
 """
 
+from pydantic import Field, field_validator, ConfigDict
 from app.schemas.base import CamelModel
+
+
+class ProfileUpdateRequest(CamelModel):
+    """
+    Allowlist for updating member profile.
+    Strictly forbids immutable fields (id, handle, created_at, counts)
+    or unknown properties via extra="forbid".
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str | None = Field(None, min_length=1, max_length=100)
+    bio: str | None = Field(None, max_length=280)
+    avatar_small_url: str | None = None
+    avatar_large_url: str | None = None
+
+    @field_validator("display_name")
+    @classmethod
+    def clean_display_name(cls, v: str | None) -> str | None:
+        if v is not None:
+            trimmed = v.strip()
+            if not trimmed:
+                raise ValueError("Display name cannot be empty")
+            return trimmed
+        return v
+
 
 
 class Avatar(CamelModel):

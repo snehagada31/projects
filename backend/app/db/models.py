@@ -15,7 +15,8 @@ inside the session's lifetime, before the session closes.
 
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, Integer, ForeignKey, CheckConstraint, UniqueConstraint
+from sqlalchemy import String, Text, Integer, Boolean, ForeignKey, CheckConstraint, UniqueConstraint
+
 from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -35,7 +36,9 @@ class User(Base):
     avatar_small_url: Mapped[str] = mapped_column(Text, nullable=False)
     avatar_large_url: Mapped[str] = mapped_column(Text, nullable=False)
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sql_text("true"))
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True, precision=3), nullable=False, server_default=sql_text("now()"))
+
 
     __table_args__ = (
 

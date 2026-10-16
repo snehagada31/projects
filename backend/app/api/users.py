@@ -8,11 +8,15 @@ from fastapi import APIRouter, Depends
 
 from app.repositories.social_repository import SocialRepository
 from app.api.feed import get_social_repository
-from app.schemas.user import UserProfileResponse, UserProfileItem, Avatar
-from app.common.errors import ValidationError, NotFoundError
+from app.schemas.user import UserProfileResponse, UserProfileItem, Avatar, ProfileUpdateRequest
+from app.schemas.auth import AuthMessageResponse
+from app.common.errors import ValidationError, NotFoundError, AuthorizationError
 from app.services.post_service import maybe_await
+from app.services.auth_service import get_current_user
+from app.db.models import User
 from app.config import settings
 from app.common.fake_io import fake_io_operation
+
 
 router = APIRouter()
 
@@ -24,7 +28,88 @@ def _validate_user_id(user_id: str) -> None:
         raise ValidationError("user id is not a valid UUID", field="id", reason="bad_uuid")
 
 
+async def _build_user_profile_response(repo: SocialRepository, user: User | dict) -> UserProfileResponse:
+    uid_str = str(user["id"] if isinstance(user, dict) else user.id)
+    avatar_dict = user.get("avatar") or {} if isinstance(user, dict) else {}
+    small_url = avatar_dict.get("small_url") if isinstance(user, dict) else getattr(user, "avatar_small_url", "")
+    large_url = avatar_dict.get("large_url") if isinstance(user, dict) else getattr(user, "avatar_large_url", "")
+    bio = user.get("bio") if isinstance(user, dict) else user.bio
+    display_name = user["display_name"] if isinstance(user, dict) else user.display_name
+    handle = user["handle"] if isinstance(user, dict) else user.handle
+
+    post_count = await maybe_await(repo.get_post_count(uid_str))
+    follower_count = await maybe_await(repo.get_follower_count(uid_str))
+    following_count = await maybe_await(repo.get_following_count(uid_str))
+
+    item = UserProfileItem(
+        id=uid_str,
+        handle=handle,
+        display_name=display_name,
+        bio=bio,
+        avatar=Avatar(small_url=small_url, large_url=large_url),
+        post_count=post_count,
+        follower_count=follower_count,
+        following_count=following_count,
+    )
+    return UserProfileResponse(item=item)
+
+
+@router.patch("/users/me", response_model=UserProfileResponse)
+async def update_my_profile(
+    body: ProfileUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
+    updated = await maybe_await(
+        repo.update_user_profile(
+            user_id=current_user.id,
+            display_name=body.display_name,
+            bio=body.bio,
+            avatar_small_url=body.avatar_small_url,
+            avatar_large_url=body.avatar_large_url,
+        )
+    )
+    if not updated:
+        raise NotFoundError("User not found or deactivated")
+    return await _build_user_profile_response(repo, updated)
+
+
+@router.post("/users/me/deactivate", response_model=AuthMessageResponse)
+async def deactivate_my_account(
+    current_user: User = Depends(get_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
+    await maybe_await(repo.deactivate_user(current_user.id))
+    return AuthMessageResponse(message="Account successfully deactivated")
+
+
+@router.patch("/users/{user_id}", response_model=UserProfileResponse)
+async def update_user_profile_by_id(
+    user_id: str,
+    body: ProfileUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
+    _validate_user_id(user_id)
+    if str(current_user.id) != user_id:
+        raise AuthorizationError("Cannot update another user's profile")
+
+    updated = await maybe_await(
+        repo.update_user_profile(
+            user_id=current_user.id,
+            display_name=body.display_name,
+            bio=body.bio,
+            avatar_small_url=body.avatar_small_url,
+            avatar_large_url=body.avatar_large_url,
+        )
+    )
+    if not updated:
+        raise NotFoundError("User not found or deactivated")
+    return await _build_user_profile_response(repo, updated)
+
+
 @router.get("/users/{user_id}", response_model=UserProfileResponse)
+
 async def get_user_profile(
     user_id: str,
     repo: SocialRepository = Depends(get_social_repository),
