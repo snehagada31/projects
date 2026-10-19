@@ -12,7 +12,8 @@ from app.schemas.user import UserProfileResponse, UserProfileItem, Avatar, Profi
 from app.schemas.auth import AuthMessageResponse
 from app.common.errors import ValidationError, NotFoundError, AuthorizationError
 from app.services.post_service import maybe_await
-from app.services.auth_service import get_current_user
+from app.services.auth_service import get_current_user, get_optional_current_user
+
 from app.db.models import User
 from app.config import settings
 from app.common.fake_io import fake_io_operation
@@ -194,10 +195,16 @@ from app.schemas.user import FollowResponse, UserFollowSuggestion
 
 
 @router.get("/users", response_model=list[UserFollowSuggestion])
-async def list_users(q: str | None = None, repo: SocialRepository = Depends(get_social_repository)):
+async def list_users(
+    q: str | None = None,
+    current_user: User | None = Depends(get_optional_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
     users = await maybe_await(repo.get_all_users())
     results = []
     lowered = q.strip().lower() if q else None
+    viewer_id = str(current_user.id) if current_user else None
+
     for u in users:
         u_id = str(u["id"] if isinstance(u, dict) else u.id)
         handle = u["handle"] if isinstance(u, dict) else u.handle
@@ -207,14 +214,14 @@ async def list_users(q: str | None = None, repo: SocialRepository = Depends(get_
         if lowered:
             if lowered not in handle.lower() and lowered not in display_name.lower():
                 continue
-        elif u_id == settings.demo_user_id:
+        elif viewer_id and u_id == viewer_id:
             # Skip self for suggestions when not searching
             continue
 
         avatar_dict = u.get("avatar") or {} if isinstance(u, dict) else {}
         small_url = avatar_dict.get("small_url") if isinstance(u, dict) else getattr(u, "avatar_small_url", "")
         large_url = avatar_dict.get("large_url") if isinstance(u, dict) else getattr(u, "avatar_large_url", "")
-        is_following = await maybe_await(repo.is_following(settings.demo_user_id, u_id))
+        is_following = await maybe_await(repo.is_following(viewer_id, u_id)) if viewer_id else False
         results.append(
             UserFollowSuggestion(
                 id=u_id,
@@ -229,22 +236,102 @@ async def list_users(q: str | None = None, repo: SocialRepository = Depends(get_
 
 
 @router.put("/users/{user_id}/follow", response_model=FollowResponse)
-async def follow_user(user_id: str, repo: SocialRepository = Depends(get_social_repository)):
+async def follow_user(
+    user_id: str,
+    current_user: User = Depends(get_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
     _validate_user_id(user_id)
-    if user_id == settings.demo_user_id:
+    if user_id == str(current_user.id):
         raise ValidationError("users cannot follow themselves", field="id", reason="self_follow", status_code=422)
     target = await maybe_await(repo.get_user(user_id))
     if not target:
         raise NotFoundError("user not found")
 
-    await maybe_await(repo.add_follow(settings.demo_user_id, user_id))
+    await maybe_await(repo.add_follow(str(current_user.id), user_id))
     follower_count = await maybe_await(repo.get_follower_count(user_id))
     return FollowResponse(user_id=user_id, following=True, follower_count=follower_count)
 
 
 @router.delete("/users/{user_id}/follow", response_model=FollowResponse)
-async def unfollow_user(user_id: str, repo: SocialRepository = Depends(get_social_repository)):
+async def unfollow_user(
+    user_id: str,
+    current_user: User = Depends(get_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
     _validate_user_id(user_id)
-    await maybe_await(repo.remove_follow(settings.demo_user_id, user_id))
+    await maybe_await(repo.remove_follow(str(current_user.id), user_id))
     follower_count = await maybe_await(repo.get_follower_count(user_id))
     return FollowResponse(user_id=user_id, following=False, follower_count=follower_count)
+
+
+@router.get("/users/{user_id}/followers", response_model=list[UserFollowSuggestion])
+async def list_followers(
+    user_id: str,
+    current_user: User | None = Depends(get_optional_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
+    _validate_user_id(user_id)
+    target = await maybe_await(repo.get_user(user_id))
+    if not target:
+        raise NotFoundError("user not found")
+
+    followers = await maybe_await(repo.get_followers(user_id))
+    viewer_id = str(current_user.id) if current_user else None
+    results = []
+    for u in followers:
+        u_id = str(u["id"] if isinstance(u, dict) else u.id)
+        handle = u["handle"] if isinstance(u, dict) else u.handle
+        display_name = u["display_name"] if isinstance(u, dict) else u.display_name
+        bio = u.get("bio") if isinstance(u, dict) else u.bio
+        avatar_dict = u.get("avatar") or {} if isinstance(u, dict) else {}
+        small_url = avatar_dict.get("small_url") if isinstance(u, dict) else getattr(u, "avatar_small_url", "")
+        large_url = avatar_dict.get("large_url") if isinstance(u, dict) else getattr(u, "avatar_large_url", "")
+        is_following = await maybe_await(repo.is_following(viewer_id, u_id)) if viewer_id else False
+        results.append(
+            UserFollowSuggestion(
+                id=u_id,
+                handle=handle,
+                display_name=display_name,
+                bio=bio,
+                avatar=Avatar(small_url=small_url, large_url=large_url),
+                following=is_following,
+            )
+        )
+    return results
+
+
+@router.get("/users/{user_id}/following", response_model=list[UserFollowSuggestion])
+async def list_following(
+    user_id: str,
+    current_user: User | None = Depends(get_optional_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
+    _validate_user_id(user_id)
+    target = await maybe_await(repo.get_user(user_id))
+    if not target:
+        raise NotFoundError("user not found")
+
+    following = await maybe_await(repo.get_following(user_id))
+    viewer_id = str(current_user.id) if current_user else None
+    results = []
+    for u in following:
+        u_id = str(u["id"] if isinstance(u, dict) else u.id)
+        handle = u["handle"] if isinstance(u, dict) else u.handle
+        display_name = u["display_name"] if isinstance(u, dict) else u.display_name
+        bio = u.get("bio") if isinstance(u, dict) else u.bio
+        avatar_dict = u.get("avatar") or {} if isinstance(u, dict) else {}
+        small_url = avatar_dict.get("small_url") if isinstance(u, dict) else getattr(u, "avatar_small_url", "")
+        large_url = avatar_dict.get("large_url") if isinstance(u, dict) else getattr(u, "avatar_large_url", "")
+        is_following = await maybe_await(repo.is_following(viewer_id, u_id)) if viewer_id else False
+        results.append(
+            UserFollowSuggestion(
+                id=u_id,
+                handle=handle,
+                display_name=display_name,
+                bio=bio,
+                avatar=Avatar(small_url=small_url, large_url=large_url),
+                following=is_following,
+            )
+        )
+    return results

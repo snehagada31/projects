@@ -249,6 +249,27 @@ class PostgresSocialRepository:
         await self.session.execute(stmt)
         await self.session.commit()
 
+    async def get_followers(self, user_id: str) -> list[User]:
+        stmt = (
+            select(User)
+            .join(Follow, Follow.follower_id == User.id)
+            .where(and_(Follow.following_id == uuid.UUID(user_id), User.is_active.is_(True)))
+            .order_by(Follow.created_at.desc())
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
+    async def get_following(self, user_id: str) -> list[User]:
+        stmt = (
+            select(User)
+            .join(Follow, Follow.following_id == User.id)
+            .where(and_(Follow.follower_id == uuid.UUID(user_id), User.is_active.is_(True)))
+            .order_by(Follow.created_at.desc())
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
+
     async def get_all_users(self) -> list[User]:
         stmt = select(User).order_by(User.handle)
         res = await self.session.execute(stmt)
