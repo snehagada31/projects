@@ -3,8 +3,29 @@ Post-related response shapes — the biggest schema in the contract.
 Matches the brief's example JSON field-for-field.
 """
 
+from pydantic import Field, field_validator, ConfigDict
 from app.schemas.base import CamelModel
 from app.schemas.user import AuthorSummary
+
+
+class EditPostRequest(CamelModel):
+    """
+    Allowlist for editing post text by the author.
+    Strictly forbids immutable fields (id, author_id, kind, created_at, reply_to_id, etc.)
+    via extra="forbid".
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(..., min_length=1, max_length=280)
+
+    @field_validator("text")
+    @classmethod
+    def clean_text(cls, v: str) -> str:
+        trimmed = v.strip()
+        if not trimmed:
+            raise ValueError("Post text cannot be empty or whitespace only")
+        return trimmed
+
 
 
 class MediaItem(CamelModel):

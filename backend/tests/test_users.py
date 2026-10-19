@@ -37,13 +37,13 @@ def test_list_users(client):
     assert len(users) > 0
 
 
-def test_follow_and_unfollow_user(client):
+def test_follow_and_unfollow_user(auth_client):
     target_id = USERS[3]["id"]  # Leo Martins
-    r_follow = client.put(f"/users/{target_id}/follow")
+    r_follow = auth_client.put(f"/users/{target_id}/follow")
     assert r_follow.status_code == 200
     assert r_follow.json()["following"] is True
 
-    r_unfollow = client.delete(f"/users/{target_id}/follow")
+    r_unfollow = auth_client.delete(f"/users/{target_id}/follow")
     assert r_unfollow.status_code == 200
     assert r_unfollow.json()["following"] is False
 

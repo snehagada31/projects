@@ -41,9 +41,39 @@ class PostgresSocialRepository:
         return res.scalar_one_or_none()
 
     async def get_originals_sorted(self) -> list[Post]:
-        stmt = select(Post).options(selectinload(Post.author)).where(Post.kind == "original").order_by(desc(Post.created_at), desc(Post.id))
+        stmt = (
+            select(Post)
+            .options(selectinload(Post.author))
+            .join(User, Post.author_id == User.id)
+            .where(and_(Post.kind == "original", User.is_active.is_(True)))
+            .order_by(desc(Post.created_at), desc(Post.id))
+        )
         res = await self.session.execute(stmt)
         return list(res.scalars().all())
+
+    async def get_personalized_feed(self, viewer_id: uuid.UUID | str) -> list[Post]:
+        uid = uuid.UUID(str(viewer_id)) if isinstance(viewer_id, str) else viewer_id
+        followed_subquery = select(Follow.following_id).where(Follow.follower_id == uid)
+
+        stmt = (
+            select(Post)
+            .options(selectinload(Post.author))
+            .join(User, Post.author_id == User.id)
+            .where(
+                and_(
+                    Post.kind == "original",
+                    User.is_active.is_(True),
+                    or_(
+                        Post.author_id.in_(followed_subquery),
+                        Post.author_id == uid,
+                    ),
+                )
+            )
+            .order_by(desc(Post.created_at), desc(Post.id))
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
 
     async def get_replies_for_post(self, post_id: str) -> list[Post]:
         stmt = (
@@ -209,8 +239,20 @@ class PostgresSocialRepository:
         await self.session.execute(stmt)
         await self.session.commit()
 
+    async def update_post_text(self, post_id: str, new_text: str) -> Post | None:
+        stmt = select(Post).options(selectinload(Post.author)).where(Post.id == uuid.UUID(post_id))
+        res = await self.session.execute(stmt)
+        post = res.scalar_one_or_none()
+        if not post:
+            return None
+        post.text = new_text
+        await self.session.commit()
+        await self.session.refresh(post)
+        return post
+
     async def delete_post(self, post_id: str) -> bool:
         stmt = select(Post).where(Post.id == uuid.UUID(post_id))
+
         res = await self.session.execute(stmt)
         post = res.scalar_one_or_none()
         if not post:

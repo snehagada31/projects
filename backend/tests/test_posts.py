@@ -38,13 +38,13 @@ def test_post_replies(client):
     assert "hasMore" in body
 
 
-def test_like_and_unlike_post(client):
+def test_like_and_unlike_post(auth_client):
     post_id = ORIGINALS[0]["id"]
-    r_like = client.put(f"/posts/{post_id}/like")
+    r_like = auth_client.put(f"/posts/{post_id}/like")
     assert r_like.status_code == 200
     assert r_like.json()["likedByViewer"] is True
 
-    r_unlike = client.delete(f"/posts/{post_id}/like")
+    r_unlike = auth_client.delete(f"/posts/{post_id}/like")
     assert r_unlike.status_code == 200
     assert r_unlike.json()["likedByViewer"] is False
 
@@ -56,34 +56,34 @@ def test_search_posts(client):
     assert "items" in body
 
 
-def test_create_original_post(client):
-    r = client.post("/posts", json={"kind": "original", "text": "A brand new original post from test suite"})
+def test_create_original_post(auth_client):
+    r = auth_client.post("/posts", json={"kind": "original", "text": "A brand new original post from test suite"})
     assert r.status_code == 201
     body = r.json()
     assert "item" in body
     assert body["item"]["text"] == "A brand new original post from test suite"
 
 
-def test_repost_and_unrepost(client):
+def test_repost_and_unrepost(auth_client):
     post_id = ORIGINALS[1]["id"]
-    r_repost = client.put(f"/posts/{post_id}/repost")
+    r_repost = auth_client.put(f"/posts/{post_id}/repost")
     assert r_repost.status_code == 200
     assert r_repost.json()["repostedByViewer"] is True
 
-    r_unrepost = client.delete(f"/posts/{post_id}/repost")
+    r_unrepost = auth_client.delete(f"/posts/{post_id}/repost")
     assert r_unrepost.status_code == 200
     assert r_unrepost.json()["repostedByViewer"] is False
 
 
-def test_delete_reply_post(client):
+def test_delete_reply_post(auth_client):
     # Create reply first
     orig_id = ORIGINALS[0]["id"]
-    r_create = client.post("/posts", json={"kind": "reply", "text": "Temporary reply to delete", "replyToId": orig_id})
+    r_create = auth_client.post("/posts", json={"kind": "reply", "text": "Temporary reply to delete", "replyToId": orig_id})
     assert r_create.status_code == 201
     reply_id = r_create.json()["item"]["id"]
 
     # Delete reply
-    r_del = client.delete(f"/posts/{reply_id}")
+    r_del = auth_client.delete(f"/posts/{reply_id}")
     assert r_del.status_code == 200
     assert r_del.json()["success"] is True
 
