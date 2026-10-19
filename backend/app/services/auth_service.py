@@ -141,6 +141,9 @@ async def get_current_user(
     if not session or not session.user:
         raise AuthenticationError("Invalid or expired session token")
 
+    if not session.user.is_active:
+        raise AuthenticationError("Account has been deactivated")
+
     return session.user
 
 
@@ -150,7 +153,7 @@ async def get_optional_current_user(
 ) -> User | None:
     """
     FastAPI dependency for public read surfaces (e.g. GET /feed) where
-    viewer state is optional: returns User if authenticated, else None.
+    viewer state is optional: returns User if authenticated and active, else None.
     """
     if not auth or not auth.credentials:
         return None
@@ -158,4 +161,6 @@ async def get_optional_current_user(
     token_hash = hash_session_token(auth.credentials)
     repo = PostgresSocialRepository(db)
     session = await repo.get_active_session(token_hash)
-    return session.user if session else None
+    if not session or not session.user or not session.user.is_active:
+        return None
+    return session.user
