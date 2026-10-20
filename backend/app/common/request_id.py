@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.INFO)
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        request_id = str(uuid.uuid4())
+        request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
         request.state.request_id = request_id
         start = time.perf_counter()
 
