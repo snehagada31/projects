@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import settings
-from app.api import health, feed, posts, users, auth
+from app.api import health, feed, posts, users, auth, notifications
 from app.common.request_id import RequestIdMiddleware
 from app.common.errors import AppError
 from app.common.error_handlers import (
@@ -63,7 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(feed.router)
     app.include_router(posts.router)
     app.include_router(users.router)
-
+    app.include_router(notifications.router)
 
     return app
 

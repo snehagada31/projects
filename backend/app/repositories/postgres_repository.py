@@ -4,11 +4,11 @@ PostgreSQL implementation of SocialRepository (Stage C).
 
 import uuid
 from datetime import datetime
-from sqlalchemy import select, func, and_, or_, desc, delete
+from sqlalchemy import select, func, and_, or_, desc, delete, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.db.models import User, Post, PostMedia, Like, Follow, UserSession
+from app.db.models import User, Post, PostMedia, Like, Follow, UserSession, Notification
 
 
 
@@ -127,13 +127,34 @@ class PostgresSocialRepository:
         return res.scalar() or 0
 
     async def add_like(self, user_id: str, post_id: str) -> None:
-        stmt = insert(Like).values(user_id=uuid.UUID(user_id), post_id=uuid.UUID(post_id)).on_conflict_do_nothing()
+        p_uuid = uuid.UUID(post_id)
+        u_uuid = uuid.UUID(user_id)
+        stmt = insert(Like).values(user_id=u_uuid, post_id=p_uuid).on_conflict_do_nothing()
         await self.session.execute(stmt)
+
+        # Trigger notification to target post author if not self-like
+        post_author_id = await self.session.scalar(select(Post.author_id).where(Post.id == p_uuid))
+        if post_author_id and post_author_id != u_uuid:
+            dedup = f"like:{user_id}:{post_id}"
+            notif_stmt = insert(Notification).values(
+                recipient_id=post_author_id,
+                actor_id=u_uuid,
+                event_type="like",
+                post_id=p_uuid,
+                dedup_key=dedup,
+            ).on_conflict_do_nothing()
+            await self.session.execute(notif_stmt)
+
         await self.session.commit()
 
     async def remove_like(self, user_id: str, post_id: str) -> None:
-        stmt = delete(Like).where(Like.user_id == uuid.UUID(user_id), Like.post_id == uuid.UUID(post_id))
+        p_uuid = uuid.UUID(post_id)
+        u_uuid = uuid.UUID(user_id)
+        stmt = delete(Like).where(Like.user_id == u_uuid, Like.post_id == p_uuid)
         await self.session.execute(stmt)
+
+        dedup = f"like:{user_id}:{post_id}"
+        await self.session.execute(delete(Notification).where(Notification.dedup_key == dedup))
         await self.session.commit()
 
     async def has_user_reposted(self, user_id: str, original_id: str) -> bool:
@@ -148,14 +169,33 @@ class PostgresSocialRepository:
     async def create_post(
         self, author_id: str, kind: str, text: str | None, reply_to_id: str | None, repost_of_id: str | None
     ) -> Post:
+        u_uuid = uuid.UUID(author_id)
         new_post = Post(
-            author_id=uuid.UUID(author_id),
+            author_id=u_uuid,
             kind=kind,
             text=text,
             reply_to_id=uuid.UUID(reply_to_id) if reply_to_id else None,
             repost_of_id=uuid.UUID(repost_of_id) if repost_of_id else None,
         )
         self.session.add(new_post)
+        await self.session.flush()
+
+        # Trigger notification if this is a reply to another user's post
+        if kind == "reply" and new_post.reply_to_id:
+            parent_author_id = await self.session.scalar(
+                select(Post.author_id).where(Post.id == new_post.reply_to_id)
+            )
+            if parent_author_id and parent_author_id != u_uuid:
+                dedup = f"reply:{new_post.id}"
+                notif = Notification(
+                    recipient_id=parent_author_id,
+                    actor_id=u_uuid,
+                    event_type="reply",
+                    post_id=new_post.id,
+                    dedup_key=dedup,
+                )
+                self.session.add(notif)
+
         await self.session.commit()
         await self.session.refresh(new_post, ["author"])
         return new_post
@@ -226,6 +266,22 @@ class PostgresSocialRepository:
             repost_of_id=uuid.UUID(original_id),
         )
         self.session.add(new_repost)
+
+        # Trigger notification to original post author if not self-repost
+        orig_author_id = await self.session.scalar(
+            select(Post.author_id).where(Post.id == uuid.UUID(original_id))
+        )
+        if orig_author_id and orig_author_id != uuid.UUID(user_id):
+            dedup = f"repost:{user_id}:{original_id}"
+            notif_stmt = insert(Notification).values(
+                recipient_id=orig_author_id,
+                actor_id=uuid.UUID(user_id),
+                event_type="repost",
+                post_id=uuid.UUID(original_id),
+                dedup_key=dedup,
+            ).on_conflict_do_nothing()
+            await self.session.execute(notif_stmt)
+
         await self.session.commit()
         await self.session.refresh(new_repost, ["author"])
         return new_repost
@@ -237,6 +293,9 @@ class PostgresSocialRepository:
             Post.kind == "repost",
         )
         await self.session.execute(stmt)
+
+        dedup = f"repost:{user_id}:{original_id}"
+        await self.session.execute(delete(Notification).where(Notification.dedup_key == dedup))
         await self.session.commit()
 
     async def update_post_text(self, post_id: str, new_text: str) -> Post | None:
@@ -276,11 +335,25 @@ class PostgresSocialRepository:
     async def add_follow(self, follower_id: str, following_id: str) -> None:
         if follower_id == following_id:
             return
+        fl_uuid = uuid.UUID(follower_id)
+        fg_uuid = uuid.UUID(following_id)
         stmt = insert(Follow).values(
-            follower_id=uuid.UUID(follower_id),
-            following_id=uuid.UUID(following_id),
+            follower_id=fl_uuid,
+            following_id=fg_uuid,
         ).on_conflict_do_nothing()
         await self.session.execute(stmt)
+
+        # Trigger notification to following_id
+        dedup = f"follow:{follower_id}:{following_id}"
+        notif_stmt = insert(Notification).values(
+            recipient_id=fg_uuid,
+            actor_id=fl_uuid,
+            event_type="follow",
+            post_id=None,
+            dedup_key=dedup,
+        ).on_conflict_do_nothing()
+        await self.session.execute(notif_stmt)
+
         await self.session.commit()
 
     async def remove_follow(self, follower_id: str, following_id: str) -> None:
@@ -289,6 +362,9 @@ class PostgresSocialRepository:
             Follow.following_id == uuid.UUID(following_id),
         )
         await self.session.execute(stmt)
+
+        dedup = f"follow:{follower_id}:{following_id}"
+        await self.session.execute(delete(Notification).where(Notification.dedup_key == dedup))
         await self.session.commit()
 
     async def get_followers(self, user_id: str) -> list[User]:
@@ -435,9 +511,53 @@ class PostgresSocialRepository:
         sess_res = await self.session.execute(sess_stmt)
         for s in sess_res.scalars().all():
             s.revoked_at = func.now()
-
         await self.session.commit()
         return True
 
+    async def get_notifications(self, user_id: str) -> list[Notification]:
+        stmt = (
+            select(Notification)
+            .options(selectinload(Notification.actor))
+            .where(Notification.recipient_id == uuid.UUID(user_id))
+            .order_by(desc(Notification.created_at), desc(Notification.id))
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
 
+    async def get_unread_notification_count(self, user_id: str) -> int:
+        stmt = select(func.count(Notification.id)).where(
+            Notification.recipient_id == uuid.UUID(user_id),
+            Notification.is_read.is_(False),
+        )
+        res = await self.session.execute(stmt)
+        return res.scalar() or 0
 
+    async def mark_notification_read(self, notification_id: str, user_id: str) -> Notification | str | None:
+        stmt = (
+            select(Notification)
+            .options(selectinload(Notification.actor))
+            .where(Notification.id == uuid.UUID(notification_id))
+        )
+        res = await self.session.execute(stmt)
+        notif = res.scalar_one_or_none()
+        if not notif:
+            return None
+        if str(notif.recipient_id) != user_id:
+            return "FORBIDDEN"
+        notif.is_read = True
+        await self.session.commit()
+        await self.session.refresh(notif)
+        return notif
+
+    async def mark_all_notifications_read(self, user_id: str) -> int:
+        stmt = (
+            update(Notification)
+            .where(
+                Notification.recipient_id == uuid.UUID(user_id),
+                Notification.is_read.is_(False),
+            )
+            .values(is_read=True)
+        )
+        res = await self.session.execute(stmt)
+        await self.session.commit()
+        return res.rowcount or 0

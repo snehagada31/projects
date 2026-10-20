@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete
 from app.main import app
 from app.db.session import engine, async_session_factory
-from app.db.models import User, Post, Like, Follow, UserSession
+from app.db.models import User, Post, Like, Follow, UserSession, Notification
 from app.fixtures.social_fixtures import ALL_POSTS, USERS
 
 SEED_POST_IDS = [uuid.UUID(p["id"]) for p in ALL_POSTS]
@@ -39,6 +39,7 @@ async def cleanup_database_and_engine():
     try:
         async with async_session_factory() as s:
             async with s.begin():
+                await s.execute(delete(Notification))
                 await s.execute(delete(Like).where(~Like.post_id.in_(SEED_POST_IDS) | ~Like.user_id.in_(SEED_USER_IDS)))
                 await s.execute(delete(Follow).where(~Follow.follower_id.in_(SEED_USER_IDS) | ~Follow.following_id.in_(SEED_USER_IDS)))
                 await s.execute(delete(UserSession).where(~UserSession.user_id.in_(SEED_USER_IDS)))

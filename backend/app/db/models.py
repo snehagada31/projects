@@ -126,4 +126,21 @@ class UserSession(Base):
     expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True, precision=3), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True, precision=3), nullable=True)
 
-    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=sql_text("gen_random_uuid()"))
+    recipient_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    post_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("posts.id", ondelete="SET NULL"), nullable=True)
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sql_text("false"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True, precision=3), nullable=False, server_default=sql_text("now()"))
+    dedup_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+
+    recipient: Mapped["User"] = relationship("User", foreign_keys=[recipient_id])
+    actor: Mapped["User"] = relationship("User", foreign_keys=[actor_id])
+    post: Mapped["Post"] = relationship("Post", foreign_keys=[post_id])
