@@ -26,12 +26,17 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
     setError(null);
     setLoading(true);
 
+    if (mode === "register" && password.trim().length < 8) {
+      setError("Password must be at least 8 characters long");
+      return;
+    }
+
     try {
       let data;
       if (mode === "login") {
-        data = await loginUser({ handle, password });
+        data = await loginUser({ handle: handle.trim(), password });
       } else {
-        data = await registerUser({ handle, displayName, password, bio });
+        data = await registerUser({ handle: handle.trim(), displayName: displayName.trim(), password, bio: bio.trim() });
       }
       onAuthSuccess(data.user);
       onClose();
@@ -214,7 +219,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
             <input
               type="password"
               required
-              placeholder="••••••••"
+              minLength={mode === "register" ? 8 : 1}
+              placeholder={mode === "register" ? "At least 8 characters" : "••••••••"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               style={{
@@ -227,6 +233,11 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
                 marginTop: "4px",
               }}
             />
+            {mode === "register" && (
+              <span style={{ display: "block", fontSize: "12px", color: "#71767b", marginTop: "4px" }}>
+                Must be at least 8 characters long
+              </span>
+            )}
           </div>
 
           {mode === "register" && (

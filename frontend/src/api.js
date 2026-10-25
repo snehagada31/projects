@@ -23,6 +23,19 @@ export function getAuthHeaders() {
 }
 
 // --- Auth Endpoints ---
+function formatApiError(data, fallbackMsg) {
+  if (data?.error?.details && Array.isArray(data.error.details) && data.error.details.length > 0) {
+    const messages = data.error.details.map((d) => {
+      if (d.field === "password") return "Password must be at least 8 characters long";
+      if (d.field === "handle") return "Handle must be valid (1-50 characters)";
+      if (d.field === "displayName" || d.field === "display_name") return "Display name is required";
+      return `${d.field}: ${d.reason || "invalid"}`;
+    });
+    return messages.join(", ");
+  }
+  return data?.error?.message || fallbackMsg;
+}
+
 export async function registerUser({ handle, displayName, password, bio = "" }) {
   const res = await fetch(`${API_BASE}/auth/register`, {
     method: "POST",
@@ -31,7 +44,7 @@ export async function registerUser({ handle, displayName, password, bio = "" }) 
   });
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data?.error?.message || "Registration failed");
+    throw new Error(formatApiError(data, "Registration failed"));
   }
   if (data.token) {
     setToken(data.token);
@@ -47,7 +60,7 @@ export async function loginUser({ handle, password }) {
   });
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data?.error?.message || "Login failed");
+    throw new Error(formatApiError(data, "Login failed"));
   }
   if (data.token) {
     setToken(data.token);
