@@ -14,6 +14,7 @@ export default function Tweet({
   id,
   author,
   handle,
+  authorAvatar,
   text,
   image,
   time,
@@ -24,9 +25,12 @@ export default function Tweet({
   initialRetweeted = false,
   onComment,
   onDelete,
+  canDelete = false,
   onImageClick,
   isReply = false,
   showActions = true,
+  currentUser = null,
+  onRequireAuth = null,
 }) {
   const [liked, setLiked] = useState(initialLiked);
   const [retweeted, setRetweeted] = useState(initialRetweeted);
@@ -57,6 +61,11 @@ export default function Tweet({
   }, [toastMessage]);
 
   async function handleLike() {
+    if (!currentUser && onRequireAuth) {
+      onRequireAuth();
+      return;
+    }
+
     const nowLiked = !liked;
     setLiked(nowLiked);
     setLikeCount((prev) => prev + (nowLiked ? 1 : -1));
@@ -79,11 +88,16 @@ export default function Tweet({
       // Rollback optimistic update
       setLiked(!nowLiked);
       setLikeCount((prev) => prev + (nowLiked ? -1 : 1));
-      setToastMessage("Error updating like");
+      setToastMessage(err.message || "Error updating like");
     }
   }
 
   async function handleRetweet() {
+    if (!currentUser && onRequireAuth) {
+      onRequireAuth();
+      return;
+    }
+
     const nowRetweeted = !retweeted;
     setRetweeted(nowRetweeted);
     setRetweetCount((prev) => prev + (nowRetweeted ? 1 : -1));
@@ -106,8 +120,16 @@ export default function Tweet({
       // Rollback optimistic update
       setRetweeted(!nowRetweeted);
       setRetweetCount((prev) => prev + (nowRetweeted ? -1 : 1));
-      setToastMessage("Error updating repost");
+      setToastMessage(err.message || "Error updating repost");
     }
+  }
+
+  async function handleComment() {
+    if (!currentUser && onRequireAuth) {
+      onRequireAuth();
+      return;
+    }
+    if (onComment) onComment();
   }
 
   async function handleShare() {
@@ -119,21 +141,43 @@ export default function Tweet({
     }
   }
 
+  const avatarSrc =
+    authorAvatar ||
+    `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(handle || author)}`;
+
   return (
     <article className={`tweet${isReply ? " tweet--reply" : ""}`}>
-      <div className="tweet-author">
-        <img
-          className="avatar"
-          src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(author)}`}
-          alt=""
-        />
-        <div className="tweet-author-info">
-          <span>{author}</span>
-          <span>{handle}</span>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        <div className="tweet-author">
+          <img className="avatar" src={avatarSrc} alt="" />
+          <div className="tweet-author-info">
+            <span>{author}</span>
+            <span>{handle}</span>
+          </div>
         </div>
+
+        {canDelete && onDelete && (
+          <button
+            onClick={onDelete}
+            title="Delete Post"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "#71767b",
+              cursor: "pointer",
+              padding: "4px 8px",
+              fontSize: "14px",
+              borderRadius: "4px",
+            }}
+            onMouseEnter={(e) => (e.target.style.color = "#f4212e")}
+            onMouseLeave={(e) => (e.target.style.color = "#71767b")}
+          >
+            🗑️ Delete
+          </button>
+        )}
       </div>
 
-      <p>{text}</p>
+      <p style={{ marginTop: "10px", marginBottom: "10px", wordBreak: "break-word" }}>{text}</p>
 
       {image && (
         <img
@@ -149,7 +193,7 @@ export default function Tweet({
 
       {showActions && (
         <div className="tweet-actions">
-          <button className="action-comment" aria-label="Reply" onClick={onComment}>
+          <button className="action-comment" aria-label="Reply" onClick={handleComment}>
             💬 <span>{initialComments}</span>
           </button>
           <span className="like-wrapper">
@@ -176,12 +220,6 @@ export default function Tweet({
             ↗
           </button>
         </div>
-      )}
-
-      {isReply && onDelete && (
-        <button className="delete-btn" onClick={onDelete}>
-          Delete
-        </button>
       )}
     </article>
   );

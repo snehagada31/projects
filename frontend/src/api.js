@@ -1,102 +1,237 @@
 const API_BASE = "http://localhost:8000";
 
+// --- Token & Auth Helpers ---
+export function getToken() {
+  return localStorage.getItem("social_v2_token");
+}
+
+export function setToken(token) {
+  if (token) {
+    localStorage.setItem("social_v2_token", token);
+  } else {
+    localStorage.removeItem("social_v2_token");
+  }
+}
+
+export function removeToken() {
+  localStorage.removeItem("social_v2_token");
+}
+
+export function getAuthHeaders() {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// --- Auth Endpoints ---
+export async function registerUser({ handle, displayName, password, bio = "" }) {
+  const res = await fetch(`${API_BASE}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ handle, displayName, password, bio }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error?.message || "Registration failed");
+  }
+  if (data.token) {
+    setToken(data.token);
+  }
+  return data;
+}
+
+export async function loginUser({ handle, password }) {
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ handle, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error?.message || "Login failed");
+  }
+  if (data.token) {
+    setToken(data.token);
+  }
+  return data;
+}
+
+export async function logoutUser() {
+  try {
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+  } catch (err) {
+    console.error("Logout network call error:", err);
+  } finally {
+    removeToken();
+  }
+}
+
+export async function fetchMe() {
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      removeToken();
+      return null;
+    }
+    return await res.json();
+  } catch (err) {
+    console.error("fetchMe error:", err);
+    return null;
+  }
+}
+
+// --- Feed (Personalized when logged in, Public when guest) ---
 export async function fetchFeed(cursor, limit = 10) {
   const isRealCursor = cursor && typeof cursor === "string" && cursor !== "0";
   const url = isRealCursor
     ? `${API_BASE}/feed?cursor=${encodeURIComponent(cursor)}&limit=${limit}`
     : `${API_BASE}/feed?limit=${limit}`;
-  const res = await fetch(url);
+
+  const res = await fetch(url, {
+    headers: getAuthHeaders(),
+  });
   if (!res.ok) throw new Error("Failed to fetch feed");
   const data = await res.json();
 
   return {
-    posts: (data.items || data.posts || []).map((item) => ({
+    posts: (data.items || []).map((item) => ({
       id: item.id,
-      author: item.author?.displayName || item.author?.handle || item.author || "User",
+      authorId: item.author?.id,
+      author: item.author?.displayName || item.author?.handle || "User",
       handle: "@" + (item.author?.handle || "user"),
+      authorAvatar: item.author?.avatar?.smallUrl || item.author?.avatar?.largeUrl || null,
       text: item.text,
-      image: item.media?.[0]?.largeUrl || item.media?.[0]?.smallUrl || item.image || null,
-      like_count: item.likeCount ?? item.like_count ?? 0,
-      comment_count: item.replyCount ?? item.comment_count ?? 0,
-      retweet_count: item.retweetCount ?? item.retweet_count ?? 0,
-      liked_by_viewer: item.likedByViewer ?? item.liked_by_viewer ?? false,
-      reposted_by_viewer: item.repostedByViewer ?? item.reposted_by_viewer ?? false,
-      created_at: item.createdAt || item.created_at,
+      image: item.media?.[0]?.largeUrl || item.media?.[0]?.smallUrl || null,
+      like_count: item.likeCount ?? 0,
+      comment_count: item.replyCount ?? 0,
+      retweet_count: item.retweetCount ?? 0,
+      liked_by_viewer: item.likedByViewer ?? false,
+      reposted_by_viewer: item.repostedByViewer ?? false,
+      created_at: item.createdAt,
     })),
-    next_cursor: data.nextCursor !== undefined ? data.nextCursor : data.next_cursor,
-    has_more: data.hasMore !== undefined ? data.hasMore : data.has_more,
+    next_cursor: data.nextCursor,
+    has_more: data.hasMore,
   };
 }
 
+// --- Like / Unlike ---
 export async function likePost(postId) {
   const res = await fetch(`${API_BASE}/posts/${postId}/like`, {
     method: "PUT",
+    headers: getAuthHeaders(),
   });
-  if (!res.ok) throw new Error("Failed to like post");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to like post");
+  }
   return res.json();
 }
 
 export async function unlikePost(postId) {
   const res = await fetch(`${API_BASE}/posts/${postId}/like`, {
     method: "DELETE",
+    headers: getAuthHeaders(),
   });
-  if (!res.ok) throw new Error("Failed to unlike post");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to unlike post");
+  }
   return res.json();
 }
 
+// --- Repost / Unrepost ---
 export async function repostPost(postId) {
   const res = await fetch(`${API_BASE}/posts/${postId}/repost`, {
     method: "PUT",
+    headers: getAuthHeaders(),
   });
-  if (!res.ok) throw new Error("Failed to repost");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to repost");
+  }
   return res.json();
 }
 
 export async function unrepostPost(postId) {
   const res = await fetch(`${API_BASE}/posts/${postId}/repost`, {
     method: "DELETE",
+    headers: getAuthHeaders(),
   });
-  if (!res.ok) throw new Error("Failed to undo repost");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to undo repost");
+  }
   return res.json();
 }
 
+// --- Post Creation, Edit & Deletion ---
 export async function createPost({ kind = "original", text, replyToId = null, repostOfId = null }) {
   const res = await fetch(`${API_BASE}/posts`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      kind,
-      text,
-      replyToId,
-      repostOfId,
-    }),
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ kind, text, replyToId, repostOfId }),
   });
-  if (!res.ok) throw new Error("Failed to create post");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to create post");
+  }
+  return res.json();
+}
+
+export async function editPost(postId, text) {
+  const res = await fetch(`${API_BASE}/posts/${postId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to edit post");
+  }
   return res.json();
 }
 
 export async function deletePost(postId) {
   const res = await fetch(`${API_BASE}/posts/${postId}`, {
     method: "DELETE",
+    headers: getAuthHeaders(),
   });
-  if (!res.ok) throw new Error("Failed to delete post");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to delete post");
+  }
   return res.json();
 }
 
+// --- Post Replies ---
 export async function fetchPostReplies(postId, cursor = null, limit = 50) {
   const isRealCursor = cursor && typeof cursor === "string" && cursor !== "0";
   let url = `${API_BASE}/posts/${postId}/replies?limit=${limit}`;
   if (isRealCursor) {
     url += `&cursor=${encodeURIComponent(cursor)}`;
   }
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error("Failed to fetch replies");
   const data = await res.json();
   return {
     replies: (data.items || []).map((item) => ({
       id: item.id,
+      authorId: item.author?.id,
       author: item.author?.displayName || item.author?.handle || "User",
       handle: "@" + (item.author?.handle || "user"),
+      authorAvatar: item.author?.avatar?.smallUrl || null,
       text: item.text,
       created_at: item.createdAt,
     })),
@@ -105,20 +240,23 @@ export async function fetchPostReplies(postId, cursor = null, limit = 50) {
   };
 }
 
+// --- Search Posts & Users ---
 export async function searchPosts(query, cursor = null, limit = 10) {
   const isRealCursor = cursor && typeof cursor === "string" && cursor !== "0";
   let url = `${API_BASE}/search/posts?q=${encodeURIComponent(query)}&limit=${limit}`;
   if (isRealCursor) {
     url += `&cursor=${encodeURIComponent(cursor)}`;
   }
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error("Failed to search posts");
   const data = await res.json();
   return {
     posts: (data.items || []).map((item) => ({
       id: item.id,
+      authorId: item.author?.id,
       author: item.author?.displayName || item.author?.handle || "User",
       handle: "@" + (item.author?.handle || "user"),
+      authorAvatar: item.author?.avatar?.smallUrl || null,
       text: item.text,
       image: item.media?.[0]?.largeUrl || null,
       like_count: item.likeCount ?? 0,
@@ -135,23 +273,92 @@ export async function searchPosts(query, cursor = null, limit = 10) {
 
 export async function fetchUsers(query = null) {
   const url = query ? `${API_BASE}/users?q=${encodeURIComponent(query)}` : `${API_BASE}/users`;
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error("Failed to fetch users");
   return res.json();
 }
 
+export async function fetchUserProfile(userId) {
+  const res = await fetch(`${API_BASE}/users/${userId}`, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error("Failed to fetch profile");
+  return res.json();
+}
+
+export async function updateMyProfile(profileData) {
+  const res = await fetch(`${API_BASE}/users/me`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(profileData),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to update profile");
+  }
+  return res.json();
+}
+
+// --- Follow / Unfollow ---
 export async function followUser(userId) {
   const res = await fetch(`${API_BASE}/users/${userId}/follow`, {
     method: "PUT",
+    headers: getAuthHeaders(),
   });
-  if (!res.ok) throw new Error("Failed to follow user");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to follow user");
+  }
   return res.json();
 }
 
 export async function unfollowUser(userId) {
   const res = await fetch(`${API_BASE}/users/${userId}/follow`, {
     method: "DELETE",
+    headers: getAuthHeaders(),
   });
-  if (!res.ok) throw new Error("Failed to unfollow user");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to unfollow user");
+  }
+  return res.json();
+}
+
+// --- Notifications ---
+export async function fetchNotifications(cursor = null, limit = 20) {
+  let url = `${API_BASE}/notifications?limit=${limit}`;
+  if (cursor) {
+    url += `&cursor=${encodeURIComponent(cursor)}`;
+  }
+  const res = await fetch(url, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error("Failed to fetch notifications");
+  return res.json();
+}
+
+export async function fetchUnreadCount() {
+  const res = await fetch(`${API_BASE}/notifications/unread-count`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) return 0;
+  const data = await res.json();
+  return data.count || 0;
+}
+
+export async function markNotificationRead(notificationId) {
+  const res = await fetch(`${API_BASE}/notifications/${notificationId}/read`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error("Failed to mark notification as read");
+  return res.json();
+}
+
+export async function markAllNotificationsRead() {
+  const res = await fetch(`${API_BASE}/notifications/read-all`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error("Failed to mark all as read");
   return res.json();
 }

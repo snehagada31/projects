@@ -33,7 +33,11 @@ async def seed_database():
                     bio=u.get("bio"),
                     avatar_small_url=u["avatar"]["small_url"],
                     avatar_large_url=u["avatar"]["large_url"],
-                ).on_conflict_do_nothing(index_elements=["id"])
+                    password_hash="$2b$12$84KXHZ50.LhiXaWYvdgsceMbWiBMQtla8x3zLtGyzk3vo19BHzFn2",
+                ).on_conflict_do_update(
+                    index_elements=["id"],
+                    set_={"password_hash": "$2b$12$84KXHZ50.LhiXaWYvdgsceMbWiBMQtla8x3zLtGyzk3vo19BHzFn2"},
+                )
                 await session.execute(stmt)
 
             # 2. Posts (originals first, then replies/reposts)

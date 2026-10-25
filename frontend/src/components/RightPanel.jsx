@@ -7,16 +7,21 @@ const TRENDS = [
   { category: "Trending in India", title: "#100DaysOfCode", meta: "45.2K posts" },
 ];
 
-export default function RightPanel({ searchQuery, onSearchChange }) {
+export default function RightPanel({ searchQuery, onSearchChange, currentUser = null, onRequireAuth = null, onFollowChange = null }) {
   const [users, setUsers] = useState([]);
 
   useEffect(() => {
     fetchUsers()
       .then((data) => setUsers(data))
       .catch((err) => console.error("Failed to load users for follow suggestions:", err));
-  }, []);
+  }, [currentUser]);
 
   async function handleToggleFollow(user) {
+    if (!currentUser && onRequireAuth) {
+      onRequireAuth();
+      return;
+    }
+
     const isFollowing = user.following;
     // Optimistic update
     setUsers((prev) =>
@@ -29,6 +34,7 @@ export default function RightPanel({ searchQuery, onSearchChange }) {
       } else {
         await followUser(user.id);
       }
+      if (onFollowChange) onFollowChange();
     } catch (err) {
       console.error("Failed to toggle follow:", err);
       // Rollback
