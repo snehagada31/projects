@@ -1,52 +1,72 @@
 """
 Cryptographic and security utilities for password hashing and session tokens.
-Complies with Python async constraints by running CPU-bound bcrypt hashing
-inside asyncio.to_thread to avoid blocking the event loop.
+Simplified implementation using hashlib to avoid external bcrypt dependency.
 """
 
 import asyncio
 import hashlib
 import secrets
-import bcrypt
+import hmac
 
-# Pre-computed dummy hash to run constant-time check when user does not exist
-# (prevents timing-based user enumeration attacks)
-DUMMY_BCRYPT_HASH = bcrypt.hashpw(b"dummy_timing_probe", bcrypt.gensalt()).decode("utf-8")
+# Dummy hash for timing attack mitigation using the same scheme as real hashes.
+# Format: "salt$hash"
+_DUMMY_SALT = "dummysalt"
+_DUMMY_HASH = hashlib.pbkdf2_hmac(
+    "sha256", b"dummy_timing_probe", _DUMMY_SALT.encode(), 100_000
+).hex()
+DUMMY_PASSWORD_HASH = f"{_DUMMY_SALT}${_DUMMY_HASH}"
 
 
 def _sync_hash_password(password: str) -> str:
-    salt = bcrypt.gensalt(rounds=12)
-    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
+    """Hash a password using PBKDF2-HMAC-SHA256.
+
+    Returns a string ``salt$hash`` where ``salt`` is a random hex string.
+    """
+    salt = secrets.token_hex(16)
+    pwd_hash = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt.encode(), 100_000
+    ).hex()
+    return f"{salt}${pwd_hash}"
 
 
-def _sync_verify_password(plain_password: str, hashed_password: str) -> bool:
+def _sync_verify_password(plain_password: str, stored_hash: str) -> bool:
+    """Verify a password against a stored ``salt$hash`` value.
+
+    Uses constant‑time comparison to prevent timing attacks.
+    """
     try:
-        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
-    except Exception:
+        salt, hash_val = stored_hash.split("$")
+    except ValueError:
         return False
+    calc_hash = hashlib.pbkdf2_hmac(
+        "sha256", plain_password.encode("utf-8"), salt.encode(), 100_000
+    ).hex()
+    return hmac.compare_digest(calc_hash, hash_val)
 
 
 async def hash_password(password: str) -> str:
-    """Hashes a plaintext password asynchronously in a worker thread."""
+    """Hash a plaintext password asynchronously in a worker thread."""
     return await asyncio.to_thread(_sync_hash_password, password)
 
 
 async def verify_password(plain_password: str, hashed_password: str | None) -> bool:
-    """
-    Verifies a password against a bcrypt hash in a worker thread.
-    If hashed_password is None (e.g. user not found), runs dummy check to preserve timing.
+    """Verify a password asynchronously.
+
+    If ``hashed_password`` is ``None`` (e.g., user not found), performs a dummy
+    verification to keep timing consistent.
     """
     if hashed_password is None:
-        await asyncio.to_thread(_sync_verify_password, plain_password, DUMMY_BCRYPT_HASH)
+        # Run dummy verification to mitigate timing attacks.
+        await asyncio.to_thread(_sync_verify_password, plain_password, DUMMY_PASSWORD_HASH)
         return False
     return await asyncio.to_thread(_sync_verify_password, plain_password, hashed_password)
 
 
 def generate_session_token() -> str:
-    """Generates a cryptographically strong 32-byte urlsafe bearer token."""
+    """Generates a cryptographically strong 32-byte URL‑safe bearer token."""
     return secrets.token_urlsafe(32)
 
 
 def hash_session_token(token: str) -> str:
-    """Hashes an opaque session token via SHA-256 for secure DB persistence."""
+    """Hashes an opaque session token via SHA‑256 for secure DB persistence."""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()

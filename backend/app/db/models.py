@@ -143,4 +143,42 @@ class Notification(Base):
 
     recipient: Mapped["User"] = relationship("User", foreign_keys=[recipient_id])
     actor: Mapped["User"] = relationship("User", foreign_keys=[actor_id])
-    post: Mapped["Post"] = relationship("Post", foreign_keys=[post_id])
+    post: Mapped["Post"] = relationship("Post", foreign_keys=[post_id])
+
+
+class Bookmark(Base):
+    __tablename__ = "bookmarks"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    post_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("posts.id", ondelete="CASCADE"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True, precision=3), nullable=False, server_default=sql_text("now()"))
+
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+    post: Mapped["Post"] = relationship("Post", foreign_keys=[post_id])
+
+
+class UserNotificationPreference(Base):
+    __tablename__ = "user_notification_preferences"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    likes: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sql_text("true"))
+    reposts: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sql_text("true"))
+    replies: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sql_text("true"))
+    follows: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sql_text("true"))
+
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+
+
+class PostReport(Base):
+    __tablename__ = "post_reports"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=sql_text("gen_random_uuid()"))
+    post_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    reporter_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    reason: Mapped[str] = mapped_column(String(32), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=sql_text("'pending'"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True, precision=3), nullable=False, server_default=sql_text("now()"))
+
+    post: Mapped["Post"] = relationship("Post", foreign_keys=[post_id])
+    reporter: Mapped["User"] = relationship("User", foreign_keys=[reporter_id])

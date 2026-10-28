@@ -75,4 +75,26 @@ class UserFollowSuggestion(CamelModel):
     display_name: str
     bio: str | None = None
     avatar: Avatar
-    following: bool = False
+    following: bool = False
+
+
+class ExplainableUserSuggestion(CamelModel):
+    id: str
+    handle: str
+    display_name: str
+    bio: str | None = None
+    avatar: Avatar
+    following: bool = False
+    follower_count: int = 0
+    reason: str = "Popular in your network"
+
+
+class UserSearchItem(CamelModel):
+    id: str
+    handle: str
+    display_name: str
+    bio: str | None = None
+    avatar: Avatar
+    follower_count: int = 0
+    following_count: int = 0
+    following: bool = False

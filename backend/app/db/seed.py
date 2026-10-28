@@ -10,7 +10,7 @@ from datetime import datetime
 from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import insert
 from app.db.session import engine, async_session_factory
-from app.db.models import User, Post, PostMedia, Like, Follow
+from app.db.models import User, Post, PostMedia, Like, Follow, Notification
 from app.fixtures.social_fixtures import USERS, ALL_POSTS, MEDIA, LIKES, FOLLOWS
 
 
@@ -81,6 +81,55 @@ async def seed_database():
                     follower_id=uuid.UUID(f["follower_id"]),
                     following_id=uuid.UUID(f["following_id"]),
                 ).on_conflict_do_nothing(index_elements=["follower_id", "following_id"])
+                await session.execute(stmt)
+
+            # 6. Initial Notifications (derived from fixture interactions)
+            seed_notifs = [
+                {
+                    "recipient_id": uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"),  # asha
+                    "actor_id": uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2"),      # devpatel
+                    "event_type": "follow",
+                    "post_id": None,
+                    "dedup_key": "follow:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+                },
+                {
+                    "recipient_id": uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"),  # asha
+                    "actor_id": uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3"),      # mayachen
+                    "event_type": "follow",
+                    "post_id": None,
+                    "dedup_key": "follow:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+                },
+                {
+                    "recipient_id": uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"),  # asha
+                    "actor_id": uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2"),      # devpatel
+                    "event_type": "like",
+                    "post_id": uuid.UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbb001"),
+                    "dedup_key": "like:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbb001",
+                },
+                {
+                    "recipient_id": uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"),  # asha
+                    "actor_id": uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3"),      # mayachen
+                    "event_type": "like",
+                    "post_id": uuid.UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbb001"),
+                    "dedup_key": "like:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbb001",
+                },
+                {
+                    "recipient_id": uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2"),  # devpatel
+                    "actor_id": uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"),      # asha
+                    "event_type": "like",
+                    "post_id": uuid.UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbb002"),
+                    "dedup_key": "like:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbb002",
+                },
+            ]
+            for n in seed_notifs:
+                stmt = insert(Notification).values(
+                    recipient_id=n["recipient_id"],
+                    actor_id=n["actor_id"],
+                    event_type=n["event_type"],
+                    post_id=n["post_id"],
+                    dedup_key=n["dedup_key"],
+                    is_read=False,
+                ).on_conflict_do_nothing(index_elements=["dedup_key"])
                 await session.execute(stmt)
 
         # Verification query per seed-manifest

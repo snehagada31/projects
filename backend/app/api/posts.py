@@ -18,7 +18,12 @@ from app.schemas.post import (
     CreatePostRequest,
     LikeResponse,
     RepostResponse,
+    BookmarkResponse,
     EditPostRequest,
+    ReportPostRequest,
+    ReportPostResponse,
+    ConversationResponse,
+    ThreadPostItem,
 )
 from app.schemas.pagination import PaginatedResponse
 from app.schemas.user import AuthorSummary, Avatar
@@ -124,6 +129,67 @@ async def get_post_replies(
     return PaginatedResponse(items=items, next_cursor=next_cursor, has_more=has_more)
 
 
+@router.get("/posts/{post_id}/conversation", response_model=ConversationResponse)
+async def get_conversation(
+    post_id: str,
+    reply_limit: int = 20,
+    current_user: User | None = Depends(get_optional_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
+    _validate_uuid(post_id)
+    viewer_id = str(current_user.id) if current_user else None
+
+    if hasattr(repo, "get_post_conversation"):
+        conv = await maybe_await(repo.get_post_conversation(post_id, reply_limit=reply_limit))
+    else:
+        conv = None
+
+    if not conv:
+        raise NotFoundError("post not found")
+
+    async def _to_thread_item(p) -> ThreadPostItem:
+        if isinstance(p, dict) and p.get("is_deleted_parent"):
+            return ThreadPostItem(
+                id=str(p["id"]),
+                kind="reply",
+                text="[This post was deleted]",
+                is_deleted_parent=True,
+                author=None,
+                created_at=None,
+                media=[],
+                reply_to_id=None,
+            )
+        item = await build_post_item(repo, p, viewer_id=viewer_id)
+        return ThreadPostItem(
+            id=item.id,
+            kind=item.kind,
+            text=item.text,
+            created_at=item.created_at,
+            author=item.author,
+            media=item.media,
+            like_count=item.like_count,
+            reply_count=item.reply_count,
+            retweet_count=item.retweet_count,
+            liked_by_viewer=item.liked_by_viewer,
+            reposted_by_viewer=item.reposted_by_viewer,
+            bookmarked_by_viewer=item.bookmarked_by_viewer,
+            reply_to_id=item.reply_to_id,
+            is_deleted_parent=False,
+        )
+
+    focus_item = await _to_thread_item(conv["focus_post"])
+    ancestor_items = [await _to_thread_item(a) for a in conv["ancestors"]]
+    reply_items = [await _to_thread_item(r) for r in conv["replies"]]
+
+    return ConversationResponse(
+        root_id=conv["root_id"],
+        focus_post=focus_item,
+        ancestors=ancestor_items,
+        replies=reply_items,
+        reply_count=conv["reply_count"],
+    )
+
+
 @router.post("/posts", status_code=status.HTTP_201_CREATED)
 async def create_post(
     payload: CreatePostRequest,
@@ -134,6 +200,21 @@ async def create_post(
     kind, text, reply_to_id, repost_of_id = await validate_create_post_rules(
         repo, payload.kind, payload.text, payload.reply_to_id, payload.repost_of_id, author_id
     )
+
+    # PY-P1-05: Media publishing rules (<= 4 images, dimension bounds, non-empty alt text)
+    if payload.media:
+        if kind == "repost":
+            raise ValidationError("Cannot attach media to a repost", field="media", reason="media_on_repost", status_code=422)
+        if len(payload.media) > 4:
+            raise ValidationError("Cannot attach more than 4 images", field="media", reason="max_images_exceeded", status_code=422)
+        for idx, m in enumerate(payload.media):
+            if not m.alt_text or not m.alt_text.strip():
+                raise ValidationError("Alt text is required for each image", field=f"media[{idx}].alt_text", reason="missing_alt_text", status_code=422)
+            if m.width <= 0 or m.height <= 0 or m.width > 8192 or m.height > 8192:
+                raise ValidationError("Image dimensions must be positive and <= 8192", field=f"media[{idx}].dimensions", reason="invalid_dimensions", status_code=422)
+            if not m.small_url or not m.large_url:
+                raise ValidationError("Image URLs cannot be empty", field=f"media[{idx}].urls", reason="missing_url", status_code=422)
+
     new_post = await maybe_await(repo.create_post(
         author_id=author_id,
         kind=kind,
@@ -141,6 +222,14 @@ async def create_post(
         reply_to_id=reply_to_id,
         repost_of_id=repost_of_id,
     ))
+
+    if payload.media and hasattr(repo, "attach_media_to_post"):
+        post_id_str = str(new_post["id"] if isinstance(new_post, dict) else new_post.id)
+        await maybe_await(repo.attach_media_to_post(
+            post_id_str,
+            [m.model_dump() for m in payload.media]
+        ))
+
     item = await build_post_item(repo, new_post, viewer_id=author_id)
     return {"item": item}
 
@@ -261,3 +350,87 @@ async def delete_post_or_comment(
     return {"success": True, "deletedId": post_id}
 
 
+@router.put("/posts/{post_id}/bookmark", response_model=BookmarkResponse)
+async def bookmark_post(
+    post_id: str,
+    current_user: User = Depends(get_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
+    _validate_uuid(post_id)
+    target = await maybe_await(repo.get_post(post_id))
+    if not target:
+        raise NotFoundError("post not found")
+    if hasattr(repo, "bookmark_post"):
+        await repo.bookmark_post(str(current_user.id), post_id)
+    return BookmarkResponse(post_id=post_id, bookmarked_by_viewer=True)
+
+
+@router.delete("/posts/{post_id}/bookmark", response_model=BookmarkResponse)
+async def unbookmark_post(
+    post_id: str,
+    current_user: User = Depends(get_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
+    _validate_uuid(post_id)
+    if hasattr(repo, "unbookmark_post"):
+        await repo.unbookmark_post(str(current_user.id), post_id)
+    return BookmarkResponse(post_id=post_id, bookmarked_by_viewer=False)
+
+
+@router.get("/bookmarks", response_model=PaginatedResponse[PostItem])
+async def list_bookmarks(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
+    cursor_tuple, limit = validate_pagination_params(request)
+    posts = (
+        await maybe_await(repo.get_bookmarked_posts(str(current_user.id)))
+        if hasattr(repo, "get_bookmarked_posts")
+        else []
+    )
+    page, next_cursor, has_more = paginate(posts, cursor_tuple, limit)
+    viewer_id = str(current_user.id)
+    items = [await build_post_item(repo, p, viewer_id=viewer_id) for p in page]
+    return PaginatedResponse(items=items, next_cursor=next_cursor, has_more=has_more)
+
+
+
+
+
+
+ALLOWED_REPORT_REASONS = {"spam", "harassment", "hate_speech", "misinformation"}
+
+
+@router.post("/posts/{post_id}/report", response_model=ReportPostResponse)
+async def report_post(
+    post_id: str,
+    req: ReportPostRequest,
+    current_user: User = Depends(get_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
+    _validate_uuid(post_id)
+    target = await maybe_await(repo.get_post(post_id))
+    if not target:
+        raise NotFoundError("post not found")
+
+    reason_lower = req.reason.strip().lower()
+    if reason_lower not in ALLOWED_REPORT_REASONS:
+        raise ValidationError(
+            f"Invalid reason '{req.reason}'. Allowed: {', '.join(sorted(ALLOWED_REPORT_REASONS))}",
+            field="reason",
+            reason="invalid_choice",
+            status_code=422,
+        )
+
+    if hasattr(repo, "create_post_report"):
+        report_id, status_val = await repo.create_post_report(
+            post_id=post_id,
+            reporter_id=str(current_user.id),
+            reason=reason_lower,
+            notes=req.notes,
+        )
+    else:
+        report_id, status_val = str(uuid.uuid4()), "pending"
+
+    return ReportPostResponse(success=True, report_id=report_id, status=status_val)

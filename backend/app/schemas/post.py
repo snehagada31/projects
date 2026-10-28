@@ -27,7 +27,6 @@ class EditPostRequest(CamelModel):
         return trimmed
 
 
-
 class MediaItem(CamelModel):
     """Media embedded INSIDE a post response — not the same shape as the
     top-level /users/{id}/media list item (that one adds postId/createdAt,
@@ -75,6 +74,7 @@ class PostItem(CamelModel):
     reply_count: int
     liked_by_viewer: bool
     reposted_by_viewer: bool = False
+    bookmarked_by_viewer: bool = False
     retweet_count: int = 0
     reply_to_id: str | None = None
     repost_of_id: str | None = None
@@ -87,11 +87,20 @@ class PostDetailResponse(CamelModel):
     referenced_post: ReferencedPost | None = None
 
 
+class MediaUploadItem(CamelModel):
+    alt_text: str = Field(..., min_length=1, max_length=1000)
+    width: int = Field(default=800, gt=0, le=8192)
+    height: int = Field(default=600, gt=0, le=8192)
+    small_url: str = Field(..., min_length=1, max_length=1000)
+    large_url: str = Field(..., min_length=1, max_length=1000)
+
+
 class CreatePostRequest(CamelModel):
     kind: str
     text: str | None = None
     reply_to_id: str | None = None
     repost_of_id: str | None = None
+    media: list[MediaUploadItem] | None = None
 
 
 class LikeResponse(CamelModel):
@@ -105,3 +114,43 @@ class RepostResponse(CamelModel):
     reposted_by_viewer: bool
     retweet_count: int
 
+
+class BookmarkResponse(CamelModel):
+    post_id: str
+    bookmarked_by_viewer: bool
+
+
+class ReportPostRequest(CamelModel):
+    reason: str = Field(..., description="Reason for report: spam, harassment, hate_speech, or misinformation")
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class ReportPostResponse(CamelModel):
+    success: bool
+    report_id: str
+    status: str
+
+
+class ThreadPostItem(CamelModel):
+    id: str
+    kind: str = "original"
+    text: str | None = None
+    created_at: str | None = None
+    author: AuthorSummary | None = None
+    media: list[MediaItem] = []
+    like_count: int = 0
+    reply_count: int = 0
+    retweet_count: int = 0
+    liked_by_viewer: bool = False
+    reposted_by_viewer: bool = False
+    bookmarked_by_viewer: bool = False
+    reply_to_id: str | None = None
+    is_deleted_parent: bool = False
+
+
+class ConversationResponse(CamelModel):
+    root_id: str
+    focus_post: ThreadPostItem
+    ancestors: list[ThreadPostItem] = []
+    replies: list[ThreadPostItem] = []
+    reply_count: int = 0

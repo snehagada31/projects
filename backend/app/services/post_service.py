@@ -90,6 +90,7 @@ async def build_post_item(repo, post: dict | Any, viewer_id: str | None = None) 
 
     retweet_count = (await maybe_await(repo.get_repost_count(post_id))) if hasattr(repo, "get_repost_count") else 0
     reposted_by_viewer = (await maybe_await(repo.is_reposted_by(viewer_id, post_id))) if (viewer_id and hasattr(repo, "is_reposted_by")) else False
+    bookmarked_by_viewer = (await maybe_await(repo.is_bookmarked_by(viewer_id, post_id))) if (viewer_id and hasattr(repo, "is_bookmarked_by")) else False
 
     return PostItem(
         id=post_id,
@@ -102,6 +103,7 @@ async def build_post_item(repo, post: dict | Any, viewer_id: str | None = None) 
         reply_count=reply_count,
         liked_by_viewer=liked_by_viewer,
         reposted_by_viewer=reposted_by_viewer,
+        bookmarked_by_viewer=bookmarked_by_viewer,
         retweet_count=retweet_count,
         reply_to_id=str(reply_to_id) if reply_to_id else None,
         repost_of_id=str(repost_of_id) if repost_of_id else None,

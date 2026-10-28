@@ -23,6 +23,8 @@ from app.schemas.notification import (
     NotificationActor,
     UnreadCountResponse,
     MarkAllReadResponse,
+    NotificationPreferencesResponse,
+    UpdateNotificationPreferencesRequest,
 )
 from app.schemas.user import Avatar
 from app.schemas.pagination import PaginatedResponse
@@ -117,3 +119,29 @@ async def mark_all_as_read(
 ):
     marked_count = await maybe_await(repo.mark_all_notifications_read(str(current_user.id)))
     return MarkAllReadResponse(marked_read=marked_count)
+
+
+
+@router.get("/preferences", response_model=NotificationPreferencesResponse)
+async def get_preferences(
+    current_user: User = Depends(get_current_user),
+    repo: PostgresSocialRepository = Depends(get_social_repository),
+):
+    prefs = await repo.get_notification_preferences(str(current_user.id))
+    return NotificationPreferencesResponse(**prefs)
+
+
+@router.patch("/preferences", response_model=NotificationPreferencesResponse)
+async def update_preferences(
+    req: UpdateNotificationPreferencesRequest,
+    current_user: User = Depends(get_current_user),
+    repo: PostgresSocialRepository = Depends(get_social_repository),
+):
+    updated = await repo.update_notification_preferences(
+        user_id=str(current_user.id),
+        likes=req.likes,
+        reposts=req.reposts,
+        replies=req.replies,
+        follows=req.follows,
+    )
+    return NotificationPreferencesResponse(**updated)

@@ -31,3 +31,17 @@ class UnreadCountResponse(CamelModel):
 
 class MarkAllReadResponse(CamelModel):
     marked_read: int = Field(alias="markedRead")
+
+
+class NotificationPreferencesResponse(CamelModel):
+    likes: bool = True
+    reposts: bool = True
+    replies: bool = True
+    follows: bool = True
+
+
+class UpdateNotificationPreferencesRequest(CamelModel):
+    likes: bool | None = None
+    reposts: bool | None = None
+    replies: bool | None = None
+    follows: bool | None = None

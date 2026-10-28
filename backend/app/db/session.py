@@ -13,15 +13,14 @@ two concurrent requests touched the same session, their changes could
 interleave and corrupt each other. Each request/task gets ITS OWN
 session, created fresh from the shared session factory.
 """
-
+from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from app.config import settings
 
 # echo=False in normal use; flip to True temporarily to see every SQL
 # statement SQLAlchemy actually sends — useful for verifying there's no
 # hidden N+1 query loop.
-engine = create_async_engine(settings.database_url, echo=False, pool_pre_ping=True)
-
+engine = create_async_engine(settings.database_url, echo=False, poolclass=NullPool)
 # expire_on_commit=False: without this, every attribute access on an
 # object AFTER commit() triggers a fresh DB query to re-fetch it (lazy
 # refresh) — which silently breaks the moment the session is closed

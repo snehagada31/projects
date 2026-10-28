@@ -28,6 +28,10 @@ CLASSIFIED_MUTATIONS = {
     ("DELETE", "/users/{user_id}/follow"): "Authenticated Unfollow",
     ("PATCH", "/notifications/{notification_id}/read"): "Recipient-Only Notification Read",
     ("POST", "/notifications/read-all"): "Authenticated Mark All Notifications Read",
+    ("PUT", "/posts/{post_id}/bookmark"): "Authenticated Desired-State Bookmark (PY-P1-02)",
+    ("DELETE", "/posts/{post_id}/bookmark"): "Authenticated Bookmark Removal (PY-P1-02)",
+    ("PATCH", "/notifications/preferences"): "Authenticated Notification Preferences Update (PY-P1-04)",
+    ("POST", "/posts/{post_id}/report"): "Authenticated Post Moderation Report (PY-P1-06)",
 }
 
 

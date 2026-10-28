@@ -177,3 +177,83 @@ class FixtureSocialRepository:
 
     def get_all_users(self) -> list[dict]:
         return list(self.users)
+
+
+    def search_users(self, q: str, limit: int = 20, cursor: str | None = None) -> tuple[list[dict], str | None, bool]:
+        lowered = q.strip().lower()
+        matched = [
+            u for u in self.users
+            if lowered in u.get("handle", "").lower() or lowered in u.get("display_name", "").lower()
+        ]
+        matched.sort(key=lambda u: (u.get("handle", ""), u.get("id", "")))
+        has_more = len(matched) > limit
+        page = matched[:limit]
+        next_cursor = f"{page[-1]['handle']}::{page[-1]['id']}" if has_more else None
+        return page, next_cursor, has_more
+
+    def get_explainable_suggestions(self, viewer_id: str | None, limit: int = 5) -> list[dict]:
+        candidates = [u for u in self.users if u.get("id") != viewer_id and not (viewer_id and self.is_following(viewer_id, u.get("id")))]
+        res = []
+        for u in candidates[:limit]:
+            f_cnt = self.get_follower_count(u.get("id"))
+            res.append({
+                "user": u,
+                "follower_count": f_cnt,
+                "reason": "Popular in your network" if f_cnt > 0 else "Suggested for you"
+            })
+        return res
+
+    def get_post_conversation(self, post_id: str, reply_limit: int = 20) -> dict | None:
+        focus = self.get_post(post_id)
+        if not focus:
+            return None
+        ancestors = []
+        visited = {focus["id"]}
+        curr = focus
+        while curr.get("reply_to_id") and len(visited) <= 10:
+            parent_id = curr["reply_to_id"]
+            if parent_id in visited:
+                break
+            visited.add(parent_id)
+            parent = self.get_post(parent_id)
+            if not parent:
+                ancestors.insert(0, {
+                    "id": parent_id,
+                    "kind": "reply",
+                    "text": "[This post was deleted]",
+                    "is_deleted_parent": True,
+                    "author": None,
+                    "created_at": None,
+                    "media": [],
+                    "reply_to_id": None,
+                })
+                break
+            ancestors.insert(0, parent)
+            curr = parent
+        replies = [p for p in self.all_posts if p.get("reply_to_id") == post_id]
+        replies.sort(key=lambda p: (p.get("created_at", ""), p.get("id", "")))
+        root_id = ancestors[0]["id"] if ancestors else focus["id"]
+        return {
+            "root_id": root_id,
+            "focus_post": focus,
+            "ancestors": ancestors,
+            "replies": replies[:reply_limit],
+            "reply_count": len(replies),
+        }
+
+    def attach_media_to_post(self, post_id: str, media_items: list[dict]) -> list[dict]:
+        added = []
+        for idx, m in enumerate(media_items[:4]):
+            entry = {
+                "id": str(uuid.uuid4()),
+                "post_id": post_id,
+                "position": idx,
+                "alt_text": m.get("alt_text", ""),
+                "width": m.get("width", 800),
+                "height": m.get("height", 600),
+                "small_url": m.get("small_url", ""),
+                "large_url": m.get("large_url", ""),
+            }
+            self.media.append(entry)
+            added.append(entry)
+        return added

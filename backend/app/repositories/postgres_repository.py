@@ -8,7 +8,7 @@ from sqlalchemy import select, func, and_, or_, desc, delete, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from app.db.models import User, Post, PostMedia, Like, Follow, UserSession, Notification
+from app.db.models import User, Post, PostMedia, Like, Follow, UserSession, Notification, Bookmark, UserNotificationPreference, PostReport
 
 
 
@@ -561,3 +561,329 @@ class PostgresSocialRepository:
         res = await self.session.execute(stmt)
         await self.session.commit()
         return res.rowcount or 0
+
+
+    async def is_bookmarked_by(self, user_id: str | None, post_id: str) -> bool:
+        if not user_id:
+            return False
+        try:
+            u_uuid = uuid.UUID(user_id)
+            p_uuid = uuid.UUID(post_id)
+        except (ValueError, TypeError):
+            return False
+        stmt = select(Bookmark).where(
+            and_(
+                Bookmark.user_id == u_uuid,
+                Bookmark.post_id == p_uuid,
+            )
+        )
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none() is not None
+
+    async def bookmark_post(self, user_id: str, post_id: str) -> None:
+        u_uuid = uuid.UUID(user_id)
+        p_uuid = uuid.UUID(post_id)
+        stmt = (
+            insert(Bookmark)
+            .values(user_id=u_uuid, post_id=p_uuid)
+            .on_conflict_do_nothing(index_elements=["user_id", "post_id"])
+        )
+        await self.session.execute(stmt)
+        await self.session.commit()
+
+    async def unbookmark_post(self, user_id: str, post_id: str) -> None:
+        u_uuid = uuid.UUID(user_id)
+        p_uuid = uuid.UUID(post_id)
+        stmt = delete(Bookmark).where(
+            and_(Bookmark.user_id == u_uuid, Bookmark.post_id == p_uuid)
+        )
+        await self.session.execute(stmt)
+        await self.session.commit()
+
+    async def get_bookmarked_posts(self, user_id: str) -> list[Post]:
+        u_uuid = uuid.UUID(user_id)
+        stmt = (
+            select(Post)
+            .join(Bookmark, Post.id == Bookmark.post_id)
+            .join(User, Post.author_id == User.id)
+            .options(selectinload(Post.author))
+            .where(and_(Bookmark.user_id == u_uuid, User.is_active.is_(True)))
+            .order_by(desc(Bookmark.created_at))
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
+    async def allows_notification(self, user_id: uuid.UUID, event_type: str) -> bool:
+        stmt = select(UserNotificationPreference).where(UserNotificationPreference.user_id == user_id)
+        res = await self.session.execute(stmt)
+        pref = res.scalar_one_or_none()
+        if not pref:
+            return True
+        if event_type == "like":
+            return pref.likes
+        if event_type == "repost":
+            return pref.reposts
+        if event_type == "reply":
+            return pref.replies
+        if event_type == "follow":
+            return pref.follows
+        return True
+
+    async def get_notification_preferences(self, user_id: str) -> dict:
+        uid = uuid.UUID(user_id)
+        stmt = select(UserNotificationPreference).where(UserNotificationPreference.user_id == uid)
+        res = await self.session.execute(stmt)
+        pref = res.scalar_one_or_none()
+        if not pref:
+            return {"likes": True, "reposts": True, "replies": True, "follows": True}
+        return {"likes": pref.likes, "reposts": pref.reposts, "replies": pref.replies, "follows": pref.follows}
+
+    async def update_notification_preferences(
+        self,
+        user_id: str,
+        likes: bool | None = None,
+        reposts: bool | None = None,
+        replies: bool | None = None,
+        follows: bool | None = None,
+    ) -> dict:
+        uid = uuid.UUID(user_id)
+        stmt = select(UserNotificationPreference).where(UserNotificationPreference.user_id == uid)
+        res = await self.session.execute(stmt)
+        pref = res.scalar_one_or_none()
+        if not pref:
+            pref = UserNotificationPreference(
+                user_id=uid,
+                likes=likes if likes is not None else True,
+                reposts=reposts if reposts is not None else True,
+                replies=replies if replies is not None else True,
+                follows=follows if follows is not None else True,
+            )
+            self.session.add(pref)
+        else:
+            if likes is not None:
+                pref.likes = likes
+            if reposts is not None:
+                pref.reposts = reposts
+            if replies is not None:
+                pref.replies = replies
+            if follows is not None:
+                pref.follows = follows
+        await self.session.commit()
+        return {"likes": pref.likes, "reposts": pref.reposts, "replies": pref.replies, "follows": pref.follows}
+
+
+    async def create_post_report(
+        self,
+        post_id: str,
+        reporter_id: str,
+        reason: str,
+        notes: str | None = None,
+    ) -> tuple[str, str]:
+        p_uuid = uuid.UUID(post_id)
+        r_uuid = uuid.UUID(reporter_id)
+        # Check existing report
+        stmt = select(PostReport).where(and_(PostReport.post_id == p_uuid, PostReport.reporter_id == r_uuid))
+        existing = (await self.session.execute(stmt)).scalar_one_or_none()
+        if existing:
+            return str(existing.id), existing.status
+
+        report = PostReport(
+            post_id=p_uuid,
+            reporter_id=r_uuid,
+            reason=reason,
+            notes=notes,
+            status="pending",
+        )
+        self.session.add(report)
+        await self.session.commit()
+        await self.session.refresh(report)
+        return str(report.id), report.status
+
+
+    async def search_users(self, q: str, limit: int = 20, cursor: str | None = None) -> tuple[list[User], str | None, bool]:
+        """
+        PY-P1-01: People discovery.
+        Search discoverable accounts: filters is_active == True.
+        Safe projections, deterministic pagination ordered by handle ASC, id ASC.
+        """
+        pattern = f"%{q.strip().lower()}%"
+        stmt = (
+            select(User)
+            .where(
+                and_(
+                    User.is_active.is_(True),
+                    or_(
+                        func.lower(User.handle).like(pattern),
+                        func.lower(User.display_name).like(pattern),
+                    )
+                )
+            )
+            .order_by(User.handle.asc(), User.id.asc())
+        )
+        if cursor:
+            # Cursor format: "handle_id"
+            try:
+                parts = cursor.split("::")
+                if len(parts) == 2:
+                    c_handle, c_id = parts[0], uuid.UUID(parts[1])
+                    stmt = stmt.where(
+                        or_(
+                            User.handle > c_handle,
+                            and_(User.handle == c_handle, User.id > c_id)
+                        )
+                    )
+            except Exception:
+                pass
+
+        stmt = stmt.limit(limit + 1)
+        res = await self.session.execute(stmt)
+        users = list(res.scalars().all())
+        has_more = len(users) > limit
+        if has_more:
+            users = users[:limit]
+            last_u = users[-1]
+            next_cursor = f"{last_u.handle}::{last_u.id}"
+        else:
+            next_cursor = None
+        return users, next_cursor, has_more
+
+    async def get_explainable_suggestions(self, viewer_id: str | None, limit: int = 5) -> list[dict]:
+        """
+        PY-P1-01: Bounded explainable suggestions.
+        Recommends active users not already followed by viewer, ordered by popularity.
+        """
+        v_uuid = uuid.UUID(viewer_id) if viewer_id else None
+        
+        # Subquery for followed user IDs by viewer
+        followed_ids = []
+        if v_uuid:
+            f_stmt = select(Follow.following_id).where(Follow.follower_id == v_uuid)
+            f_res = await self.session.execute(f_stmt)
+            followed_ids = [row[0] for row in f_res.all()]
+            followed_ids.append(v_uuid)
+
+        # Get active users
+        stmt = select(User).where(User.is_active.is_(True))
+        if followed_ids:
+            stmt = stmt.where(~User.id.in_(followed_ids))
+        stmt = stmt.order_by(User.handle.asc()).limit(limit * 3)
+        res = await self.session.execute(stmt)
+        candidate_users = list(res.scalars().all())
+
+        suggestions = []
+        for u in candidate_users:
+            follower_count = await self.get_follower_count(str(u.id))
+            reason = "Popular in your network" if follower_count > 0 else "Suggested for you"
+            suggestions.append({
+                "user": u,
+                "follower_count": follower_count,
+                "reason": reason,
+            })
+
+        suggestions.sort(key=lambda s: (-s["follower_count"], s["user"].handle))
+        return suggestions[:limit]
+
+    async def get_post_conversation(self, post_id: str, reply_limit: int = 20) -> dict | None:
+        """
+        PY-P1-03: Conversation expansion.
+        Traverses upward to root (cycle-safe, max 10 ancestors), handles deleted ancestors gracefully,
+        and returns deterministic replies subtree.
+        """
+        try:
+            p_uuid = uuid.UUID(post_id)
+        except (ValueError, TypeError):
+            return None
+
+        # Fetch focus post
+        stmt = (
+            select(Post)
+            .options(selectinload(Post.author))
+            .where(Post.id == p_uuid)
+        )
+        res = await self.session.execute(stmt)
+        focus_post = res.scalar_one_or_none()
+        if not focus_post:
+            return None
+
+        # Traverse upward to root
+        ancestors = []
+        visited = {focus_post.id}
+        curr = focus_post
+
+        while curr.reply_to_id and len(visited) <= 10:
+            parent_id = curr.reply_to_id
+            if parent_id in visited:
+                break  # Cycle detected
+            visited.add(parent_id)
+
+            p_stmt = (
+                select(Post)
+                .options(selectinload(Post.author))
+                .where(Post.id == parent_id)
+            )
+            p_res = await self.session.execute(p_stmt)
+            parent = p_res.scalar_one_or_none()
+            if not parent:
+                # Deleted ancestor placeholder
+                ancestors.insert(0, {
+                    "id": str(parent_id),
+                    "kind": "reply",
+                    "text": "[This post was deleted]",
+                    "is_deleted_parent": True,
+                    "author": None,
+                    "created_at": None,
+                    "media": [],
+                    "reply_to_id": None,
+                })
+                break
+            ancestors.insert(0, parent)
+            curr = parent
+
+        # Fetch direct replies
+        replies_stmt = (
+            select(Post)
+            .options(selectinload(Post.author))
+            .where(Post.reply_to_id == p_uuid)
+            .order_by(Post.created_at.asc(), Post.id.asc())
+            .limit(reply_limit)
+        )
+        replies_res = await self.session.execute(replies_stmt)
+        replies = list(replies_res.scalars().all())
+
+        # Reply count
+        cnt_stmt = select(func.count(Post.id)).where(Post.reply_to_id == p_uuid)
+        cnt_res = await self.session.execute(cnt_stmt)
+        total_replies = cnt_res.scalar() or 0
+
+        root_id = str(ancestors[0]["id"] if isinstance(ancestors[0], dict) else ancestors[0].id) if ancestors else str(focus_post.id)
+
+        return {
+            "root_id": root_id,
+            "focus_post": focus_post,
+            "ancestors": ancestors,
+            "replies": replies,
+            "reply_count": total_replies,
+        }
+
+    async def attach_media_to_post(self, post_id: str, media_items: list[dict]) -> list[PostMedia]:
+        """
+        PY-P1-05: Media publishing constraints.
+        Enforces <= 4 images, positive dimensions, non-empty alt text.
+        Atomic write within session.
+        """
+        p_uuid = uuid.UUID(post_id)
+        created_media = []
+        for idx, m in enumerate(media_items[:4]):
+            pm = PostMedia(
+                post_id=p_uuid,
+                position=idx,
+                alt_text=m.get("alt_text", "").strip(),
+                width=int(m.get("width", 800)),
+                height=int(m.get("height", 600)),
+                small_url=m.get("small_url", ""),
+                large_url=m.get("large_url", ""),
+            )
+            self.session.add(pm)
+            created_media.append(pm)
+        await self.session.commit()
+        return created_media

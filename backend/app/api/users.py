@@ -4,11 +4,19 @@ GET /users/{id} — a user's profile, with postCount/followerCount/followingCoun
 
 import asyncio
 import uuid
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.repositories.social_repository import SocialRepository
 from app.api.feed import get_social_repository
-from app.schemas.user import UserProfileResponse, UserProfileItem, Avatar, ProfileUpdateRequest
+from app.schemas.user import (
+    UserProfileResponse,
+    UserProfileItem,
+    Avatar,
+    ProfileUpdateRequest,
+    ExplainableUserSuggestion,
+    UserSearchItem,
+)
+from app.schemas.pagination import PaginatedResponse
 from app.schemas.auth import AuthMessageResponse
 from app.common.errors import ValidationError, NotFoundError, AuthorizationError
 from app.services.post_service import maybe_await
@@ -107,6 +115,92 @@ async def update_user_profile_by_id(
     if not updated:
         raise NotFoundError("User not found or deactivated")
     return await _build_user_profile_response(repo, updated)
+
+
+@router.get("/users/search", response_model=PaginatedResponse[UserSearchItem])
+async def search_users(
+    q: str = Query(..., min_length=1, max_length=100),
+    cursor: str | None = Query(None),
+    limit: int = Query(20, ge=1, le=50),
+    current_user: User | None = Depends(get_optional_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
+    viewer_id = str(current_user.id) if current_user else None
+    if hasattr(repo, "search_users"):
+        users, next_cursor, has_more = await maybe_await(repo.search_users(q, limit=limit, cursor=cursor))
+    else:
+        all_u = await maybe_await(repo.get_all_users())
+        matched = [u for u in all_u if q.lower() in (u.get("handle") if isinstance(u, dict) else u.handle).lower()]
+        users = matched[:limit]
+        next_cursor = None
+        has_more = len(matched) > limit
+
+    items = []
+    for u in users:
+        u_id = str(u["id"] if isinstance(u, dict) else u.id)
+        handle = u["handle"] if isinstance(u, dict) else u.handle
+        display_name = u["display_name"] if isinstance(u, dict) else u.display_name
+        bio = u.get("bio") if isinstance(u, dict) else u.bio
+        avatar_dict = u.get("avatar") or {} if isinstance(u, dict) else {}
+        small_url = avatar_dict.get("small_url") if isinstance(u, dict) else getattr(u, "avatar_small_url", "")
+        large_url = avatar_dict.get("large_url") if isinstance(u, dict) else getattr(u, "avatar_large_url", "")
+
+        f_cnt = await maybe_await(repo.get_follower_count(u_id))
+        fg_cnt = await maybe_await(repo.get_following_count(u_id))
+        is_following = await maybe_await(repo.is_following(viewer_id, u_id)) if viewer_id else False
+
+        items.append(
+            UserSearchItem(
+                id=u_id,
+                handle=handle,
+                display_name=display_name,
+                bio=bio,
+                avatar=Avatar(small_url=small_url, large_url=large_url),
+                follower_count=f_cnt,
+                following_count=fg_cnt,
+                following=is_following,
+            )
+        )
+
+    return PaginatedResponse(items=items, next_cursor=next_cursor, has_more=has_more)
+
+
+@router.get("/users/suggestions", response_model=list[ExplainableUserSuggestion])
+async def get_user_suggestions(
+    limit: int = Query(5, ge=1, le=20),
+    current_user: User | None = Depends(get_optional_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
+    viewer_id = str(current_user.id) if current_user else None
+    if hasattr(repo, "get_explainable_suggestions"):
+        raw_suggestions = await maybe_await(repo.get_explainable_suggestions(viewer_id=viewer_id, limit=limit))
+    else:
+        raw_suggestions = []
+
+    results = []
+    for s in raw_suggestions:
+        u = s["user"]
+        u_id = str(u["id"] if isinstance(u, dict) else u.id)
+        handle = u["handle"] if isinstance(u, dict) else u.handle
+        display_name = u["display_name"] if isinstance(u, dict) else u.display_name
+        bio = u.get("bio") if isinstance(u, dict) else u.bio
+        avatar_dict = u.get("avatar") or {} if isinstance(u, dict) else {}
+        small_url = avatar_dict.get("small_url") if isinstance(u, dict) else getattr(u, "avatar_small_url", "")
+        large_url = avatar_dict.get("large_url") if isinstance(u, dict) else getattr(u, "avatar_large_url", "")
+
+        results.append(
+            ExplainableUserSuggestion(
+                id=u_id,
+                handle=handle,
+                display_name=display_name,
+                bio=bio,
+                avatar=Avatar(small_url=small_url, large_url=large_url),
+                following=False,
+                follower_count=s.get("follower_count", 0),
+                reason=s.get("reason", "Popular in your network"),
+            )
+        )
+    return results
 
 
 @router.get("/users/{user_id}", response_model=UserProfileResponse)

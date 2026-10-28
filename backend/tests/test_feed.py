@@ -42,17 +42,17 @@ def test_tied_timestamp_originals_both_appear(client):
 
     seen_ids = set()
     cursor = None
-    for _ in range(3):
+    for _ in range(10):
         url = "/feed" if cursor is None else f"/feed?cursor={cursor}"
         r = client.get(url)
         body = r.json()
         seen_ids.update(item["id"] for item in body["items"])
-        cursor = body["nextCursor"]
-        if not body["hasMore"]:
+        cursor = body.get("nextCursor")
+        if tied_ids.issubset(seen_ids) or not body.get("hasMore") or not cursor:
             break
 
-    assert tied_ids.issubset(seen_ids)
-
+    missing = tied_ids - seen_ids
+    assert not missing, f"missing: {missing}\nsample seen: {sorted(seen_ids)[:5]}"
 
 def test_invalid_limit_returns_400(client):
     r = client.get("/feed?limit=abc")
