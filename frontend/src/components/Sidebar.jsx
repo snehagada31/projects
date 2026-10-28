@@ -10,6 +10,7 @@ export default function Sidebar({
     { icon: "🏠", label: "Home", id: "home" },
     { icon: "🔍", label: "Explore", id: "explore" },
     { icon: "🔔", label: "Notifications", id: "notifications", badge: unreadCount },
+    { icon: "🔖", label: "Bookmarks", id: "bookmarks" },
     { icon: "👤", label: "Profile", id: "profile" },
   ];
 

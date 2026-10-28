@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { likePost, unlikePost, repostPost, unrepostPost } from "../api.js";
+import { likePost, unlikePost, repostPost, unrepostPost, bookmarkPost, unbookmarkPost } from "../api.js";
 
 function formatTweetTime(isoString) {
   if (!isoString) return "";
@@ -23,6 +23,7 @@ export default function Tweet({
   initialLikes = 0,
   initialLiked = false,
   initialRetweeted = false,
+  initialBookmarked = false,
   onComment,
   onDelete,
   canDelete = false,
@@ -34,6 +35,7 @@ export default function Tweet({
 }) {
   const [liked, setLiked] = useState(initialLiked);
   const [retweeted, setRetweeted] = useState(initialRetweeted);
+  const [bookmarked, setBookmarked] = useState(initialBookmarked);
   const [likeCount, setLikeCount] = useState(initialLikes);
   const [retweetCount, setRetweetCount] = useState(initialRetweets);
   const [toastMessage, setToastMessage] = useState(null);
@@ -45,6 +47,10 @@ export default function Tweet({
   useEffect(() => {
     setRetweeted(initialRetweeted);
   }, [initialRetweeted]);
+
+  useEffect(() => {
+    setBookmarked(initialBookmarked);
+  }, [initialBookmarked]);
 
   useEffect(() => {
     setLikeCount(initialLikes);
@@ -132,6 +138,31 @@ export default function Tweet({
     if (onComment) onComment();
   }
 
+  async function handleBookmark() {
+    if (!currentUser && onRequireAuth) {
+      onRequireAuth();
+      return;
+    }
+
+    const nowBookmarked = !bookmarked;
+    setBookmarked(nowBookmarked);
+    setToastMessage(nowBookmarked ? "Saved to Bookmarks" : "Removed from Bookmarks");
+
+    if (!id) return;
+
+    try {
+      if (nowBookmarked) {
+        await bookmarkPost(id);
+      } else {
+        await unbookmarkPost(id);
+      }
+    } catch (err) {
+      console.error("Failed to update bookmark:", err);
+      setBookmarked(!nowBookmarked);
+      setToastMessage(err.message || "Error updating bookmark");
+    }
+  }
+
   async function handleShare() {
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -216,6 +247,21 @@ export default function Tweet({
             </button>
             {toastMessage && liked && <span className="like-toast">{toastMessage}</span>}
           </span>
+          <button
+            className={`action-bookmark${bookmarked ? " bookmarked" : ""}`}
+            aria-label="Bookmark"
+            onClick={handleBookmark}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: bookmarked ? "#1d9bf0" : "inherit",
+              cursor: "pointer",
+              fontSize: "16px",
+            }}
+            title={bookmarked ? "Remove Bookmark" : "Bookmark"}
+          >
+            {bookmarked ? "🔖" : "🏷️"}
+          </button>
           <button className="action-share" aria-label="Share" onClick={handleShare}>
             ↗
           </button>

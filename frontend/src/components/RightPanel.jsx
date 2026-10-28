@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { fetchUsers, followUser, unfollowUser } from "../api.js";
+import { fetchUsers, fetchUserSuggestions, followUser, unfollowUser } from "../api.js";
 
 const TRENDS = [
   { category: "Technology · Trending", title: "#AsyncPython", meta: "12.4K posts" },
@@ -11,9 +11,19 @@ export default function RightPanel({ searchQuery, onSearchChange, currentUser = 
   const [users, setUsers] = useState([]);
 
   useEffect(() => {
-    fetchUsers()
-      .then((data) => setUsers(data))
-      .catch((err) => console.error("Failed to load users for follow suggestions:", err));
+    fetchUserSuggestions(5)
+      .then((data) => {
+        if (data && data.length > 0) {
+          setUsers(data);
+        } else {
+          return fetchUsers().then((fallback) => setUsers(fallback));
+        }
+      })
+      .catch(() => {
+        fetchUsers()
+          .then((data) => setUsers(data))
+          .catch((err) => console.error("Failed to load users for follow suggestions:", err));
+      });
   }, [currentUser]);
 
   async function handleToggleFollow(user) {
@@ -81,6 +91,11 @@ export default function RightPanel({ searchQuery, onSearchChange, currentUser = 
             <div className="tweet-author-info">
               <span>{p.displayName}</span>
               <span>@{p.handle}</span>
+              {p.reason && (
+                <span style={{ fontSize: "11px", color: "#1d9bf0", marginTop: "2px" }}>
+                  ★ {p.reason}
+                </span>
+              )}
             </div>
             <button
               className={`follow-btn${p.following ? " following" : ""}`}

@@ -126,6 +126,7 @@ export async function fetchFeed(cursor, limit = 10) {
       retweet_count: item.retweetCount ?? 0,
       liked_by_viewer: item.likedByViewer ?? false,
       reposted_by_viewer: item.repostedByViewer ?? false,
+      bookmarked_by_viewer: item.bookmarkedByViewer ?? false,
       created_at: item.createdAt,
     })),
     next_cursor: data.nextCursor,
@@ -277,6 +278,7 @@ export async function searchPosts(query, cursor = null, limit = 10) {
       retweet_count: item.retweetCount ?? 0,
       liked_by_viewer: item.likedByViewer ?? false,
       reposted_by_viewer: item.repostedByViewer ?? false,
+      bookmarked_by_viewer: item.bookmarkedByViewer ?? false,
       created_at: item.createdAt,
     })),
     next_cursor: data.nextCursor,
@@ -373,5 +375,99 @@ export async function markAllNotificationsRead() {
     headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error("Failed to mark all as read");
+  return res.json();
+}
+
+// --- Bookmarks (PY-P1-02) ---
+export async function bookmarkPost(postId) {
+  const res = await fetch(`${API_BASE}/posts/${postId}/bookmark`, {
+    method: "PUT",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to bookmark post");
+  }
+  return res.json();
+}
+
+export async function unbookmarkPost(postId) {
+  const res = await fetch(`${API_BASE}/posts/${postId}/bookmark`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to remove bookmark");
+  }
+  return res.json();
+}
+
+export async function fetchBookmarks(cursor = null, limit = 20) {
+  const isRealCursor = cursor && typeof cursor === "string" && cursor !== "0";
+  let url = `${API_BASE}/bookmarks?limit=${limit}`;
+  if (isRealCursor) {
+    url += `&cursor=${encodeURIComponent(cursor)}`;
+  }
+  const res = await fetch(url, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error("Failed to fetch bookmarks");
+  const data = await res.json();
+  return {
+    posts: (data.items || []).map((item) => ({
+      id: item.id,
+      authorId: item.author?.id,
+      author: item.author?.displayName || item.author?.handle || "User",
+      handle: "@" + (item.author?.handle || "user"),
+      authorAvatar: item.author?.avatar?.smallUrl || null,
+      text: item.text,
+      image: item.media?.[0]?.largeUrl || null,
+      like_count: item.likeCount ?? 0,
+      comment_count: item.replyCount ?? 0,
+      retweet_count: item.retweetCount ?? 0,
+      liked_by_viewer: item.likedByViewer ?? false,
+      reposted_by_viewer: item.repostedByViewer ?? false,
+      bookmarked_by_viewer: true,
+      created_at: item.createdAt,
+    })),
+    next_cursor: data.nextCursor,
+    has_more: data.hasMore,
+  };
+}
+
+// --- People Suggestions (PY-P1-01) ---
+export async function fetchUserSuggestions(limit = 5) {
+  const res = await fetch(`${API_BASE}/users/suggestions?limit=${limit}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+// --- Conversation Expansion (PY-P1-03) ---
+export async function fetchConversation(postId, replyLimit = 20) {
+  const res = await fetch(`${API_BASE}/posts/${postId}/conversation?reply_limit=${replyLimit}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to fetch conversation");
+  }
+  return res.json();
+}
+
+// --- Reporting & Moderation (PY-P1-06) ---
+export async function reportPost(postId, reason, notes = "") {
+  const res = await fetch(`${API_BASE}/posts/${postId}/report`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ reason, notes }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to submit report");
+  }
   return res.json();
 }

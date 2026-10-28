@@ -7,6 +7,7 @@ import ImageLightbox from "./components/ImageLightbox.jsx";
 import AuthModal from "./components/AuthModal.jsx";
 import NotificationsView from "./components/NotificationsView.jsx";
 import ProfileView from "./components/ProfileView.jsx";
+import BookmarksView from "./components/BookmarksView.jsx";
 import {
   fetchFeed,
   createPost,
@@ -113,6 +114,16 @@ export default function App() {
     }
     init();
   }, [refreshFeed, refreshUnreadCount]);
+
+  // Periodically refresh notification badge every 4 seconds when logged in
+  useEffect(() => {
+    if (!currentUser) return;
+    refreshUnreadCount();
+    const interval = setInterval(() => {
+      refreshUnreadCount();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [currentUser, refreshUnreadCount]);
 
   // Infinite scroll observer
   useEffect(() => {
@@ -418,6 +429,7 @@ export default function App() {
               {activeTab === "home" && (currentUser ? "Home · Following" : "Home · Global Feed")}
               {activeTab === "explore" && "Explore & Discover"}
               {activeTab === "notifications" && "Notifications"}
+              {activeTab === "bookmarks" && "Bookmarks"}
               {activeTab === "profile" && "Profile"}
             </h1>
             {activeTab === "home" && (
@@ -474,6 +486,18 @@ export default function App() {
               </button>
             </div>
           )
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB: BOOKMARKS VIEW (PY-P1-02)                                */}
+        {/* ============================================================== */}
+        {activeTab === "bookmarks" && (
+          <BookmarksView
+            currentUser={currentUser}
+            onRequireAuth={() => setIsAuthModalOpen(true)}
+            onComment={openReplyModal}
+            onImageClick={setLightboxImage}
+          />
         )}
 
         {/* ============================================================== */}
@@ -593,6 +617,7 @@ export default function App() {
                     initialLikes={post.like_count}
                     initialLiked={post.liked_by_viewer}
                     initialRetweeted={post.reposted_by_viewer}
+                    initialBookmarked={post.bookmarked_by_viewer}
                     currentUser={currentUser}
                     onRequireAuth={() => setIsAuthModalOpen(true)}
                     canDelete={
@@ -737,6 +762,7 @@ export default function App() {
                       initialLikes={post.like_count}
                       initialLiked={post.liked_by_viewer}
                       initialRetweeted={post.reposted_by_viewer}
+                      initialBookmarked={post.bookmarked_by_viewer}
                       currentUser={currentUser}
                       onRequireAuth={() => setIsAuthModalOpen(true)}
                       canDelete={
