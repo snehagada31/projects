@@ -84,6 +84,21 @@ async def build_post_item(repo, post: dict | Any, viewer_id: str | None = None) 
     reply_to_id = post.get("reply_to_id") if isinstance(post, dict) else getattr(post, "reply_to_id", None)
     repost_of_id = post.get("repost_of_id") if isinstance(post, dict) else getattr(post, "repost_of_id", None)
 
+    reply_to_handle = None
+    if reply_to_id:
+        try:
+            parent_post = await maybe_await(repo.get_post(str(reply_to_id)))
+            if parent_post:
+                parent_author = parent_post.get("author") if isinstance(parent_post, dict) else getattr(parent_post, "author", None)
+                if not parent_author:
+                    parent_aid = parent_post.get("author_id") if isinstance(parent_post, dict) else getattr(parent_post, "author_id", None)
+                    if parent_aid:
+                        parent_author = await maybe_await(repo.get_user(str(parent_aid)))
+                if parent_author:
+                    reply_to_handle = parent_author.get("handle") if isinstance(parent_author, dict) else getattr(parent_author, "handle", None)
+        except Exception:
+            pass
+
     like_count = await maybe_await(repo.get_like_count(post_id))
     reply_count = await maybe_await(repo.get_reply_count(post_id))
     liked_by_viewer = (await maybe_await(repo.is_liked_by(viewer_id, post_id))) if viewer_id else False
@@ -106,6 +121,7 @@ async def build_post_item(repo, post: dict | Any, viewer_id: str | None = None) 
         bookmarked_by_viewer=bookmarked_by_viewer,
         retweet_count=retweet_count,
         reply_to_id=str(reply_to_id) if reply_to_id else None,
+        reply_to_handle=reply_to_handle,
         repost_of_id=str(repost_of_id) if repost_of_id else None,
     )
 

@@ -77,6 +77,7 @@ class PostItem(CamelModel):
     bookmarked_by_viewer: bool = False
     retweet_count: int = 0
     reply_to_id: str | None = None
+    reply_to_handle: str | None = None
     repost_of_id: str | None = None
 
 

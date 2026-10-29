@@ -7,6 +7,8 @@ Post endpoints:
 - DELETE /posts/{id}/like
 - GET /search/posts
 """
+import os
+import base64
 import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Request, status
@@ -233,6 +235,45 @@ async def create_post(
 
     item = await build_post_item(repo, new_post, viewer_id=author_id)
     return {"item": item}
+
+
+@router.post("/upload-image")
+async def upload_image(
+    request: Request,
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+):
+    data = payload.get("data")
+    filename = payload.get("filename", "image.jpg")
+    if not data:
+        raise ValidationError("Missing image data", field="data", reason="missing", status_code=422)
+
+    if "," in data:
+        data = data.split(",", 1)[1]
+
+    try:
+        binary_data = base64.b64decode(data)
+    except Exception:
+        raise ValidationError("Invalid base64 image data", field="data", reason="invalid_base64", status_code=422)
+
+    if len(binary_data) > 10 * 1024 * 1024:
+        raise ValidationError("Image too large (max 10MB)", field="data", reason="file_too_large", status_code=422)
+
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp"):
+        ext = ".jpg"
+
+    safe_name = f"{uuid.uuid4().hex}{ext}"
+    uploads_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "uploads"))
+    os.makedirs(uploads_dir, exist_ok=True)
+    file_path = os.path.join(uploads_dir, safe_name)
+
+    with open(file_path, "wb") as f:
+        f.write(binary_data)
+
+    base_url = str(request.base_url).rstrip("/")
+    image_url = f"{base_url}/uploads/{safe_name}"
+    return {"url": image_url}
 
 
 @router.patch("/posts/{post_id}")

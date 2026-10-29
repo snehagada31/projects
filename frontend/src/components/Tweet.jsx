@@ -30,9 +30,11 @@ export default function Tweet({
   canDelete = false,
   onImageClick,
   isReply = false,
+  replyToHandle = null,
   showActions = true,
   currentUser = null,
   onRequireAuth = null,
+  onArchive = null,
 }) {
   const [liked, setLiked] = useState(initialLiked);
   const [retweeted, setRetweeted] = useState(initialRetweeted);
@@ -262,6 +264,45 @@ export default function Tweet({
               </span>
             )}
 
+            {onArchive && (
+              <button
+                onClick={() => {
+                  if (window.confirm("Archive this post? Only you will be able to see it in your private Archive.")) {
+                    onArchive({
+                      id,
+                      authorId,
+                      author,
+                      handle,
+                      authorAvatar,
+                      text: currentText,
+                      image,
+                      created_at: time,
+                      like_count: likeCount,
+                      comment_count: initialComments,
+                      retweet_count: retweetCount,
+                      liked_by_viewer: liked,
+                      reposted_by_viewer: retweeted,
+                      bookmarked_by_viewer: bookmarked,
+                    });
+                  }
+                }}
+                title="Archive post at any time (moves to your private Archive)"
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#71767b",
+                  cursor: "pointer",
+                  padding: "4px 6px",
+                  fontSize: "13px",
+                  borderRadius: "4px",
+                }}
+                onMouseEnter={(e) => (e.target.style.color = "#eff3f4")}
+                onMouseLeave={(e) => (e.target.style.color = "#71767b")}
+              >
+                📦 Archive
+              </button>
+            )}
+
             {onDelete && (
               <button
                 onClick={onDelete}
@@ -284,6 +325,12 @@ export default function Tweet({
           </div>
         )}
       </div>
+
+      {replyToHandle && (
+        <div style={{ fontSize: "13px", color: "#71767b", marginTop: "4px", marginBottom: "4px" }}>
+          Replying to <span style={{ color: "#1d9bf0", fontWeight: "bold" }}>@{replyToHandle.replace("@", "")}</span>
+        </div>
+      )}
 
       {isEditing ? (
         <form onSubmit={handleSaveEdit} style={{ marginTop: "10px", marginBottom: "10px" }}>

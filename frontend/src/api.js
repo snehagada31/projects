@@ -127,6 +127,8 @@ export async function fetchFeed(cursor, limit = 10) {
       liked_by_viewer: item.likedByViewer ?? false,
       reposted_by_viewer: item.repostedByViewer ?? false,
       bookmarked_by_viewer: item.bookmarkedByViewer ?? false,
+      reply_to_id: item.replyToId || item.reply_to_id || null,
+      reply_to_handle: item.replyToHandle || item.reply_to_handle || null,
       created_at: item.createdAt,
     })),
     next_cursor: data.nextCursor,
@@ -185,20 +187,56 @@ export async function unrepostPost(postId) {
 }
 
 // --- Post Creation, Edit & Deletion ---
-export async function createPost({ kind = "original", text, replyToId = null, repostOfId = null }) {
+export async function createPost({ kind = "original", text, replyToId = null, repostOfId = null, media = null }) {
+  const payload = { kind, text, replyToId, repostOfId };
+  if (media && Array.isArray(media) && media.length > 0) {
+    payload.media = media;
+  }
   const res = await fetch(`${API_BASE}/posts`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...getAuthHeaders(),
     },
-    body: JSON.stringify({ kind, text, replyToId, repostOfId }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err?.error?.message || "Failed to create post");
   }
   return res.json();
+}
+
+export async function uploadPostImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const base64Data = reader.result;
+        const res = await fetch(`${API_BASE}/upload-image`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify({
+            filename: file.name,
+            data: base64Data,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err?.error?.message || "Upload failed");
+        }
+        const data = await res.json();
+        resolve(data.url);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error("Failed to read image file"));
+    reader.readAsDataURL(file);
+  });
 }
 
 export async function editPost(postId, text) {
@@ -279,6 +317,8 @@ export async function searchPosts(query, cursor = null, limit = 10) {
       liked_by_viewer: item.likedByViewer ?? false,
       reposted_by_viewer: item.repostedByViewer ?? false,
       bookmarked_by_viewer: item.bookmarkedByViewer ?? false,
+      reply_to_id: item.replyToId || item.reply_to_id || null,
+      reply_to_handle: item.replyToHandle || item.reply_to_handle || null,
       created_at: item.createdAt,
     })),
     next_cursor: data.nextCursor,

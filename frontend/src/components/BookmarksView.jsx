@@ -8,9 +8,9 @@ export default function BookmarksView({ currentUser, onRequireAuth, onComment, o
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser?.id) return;
     loadBookmarks();
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   async function loadBookmarks() {
     setLoading(true);
@@ -99,6 +99,7 @@ export default function BookmarksView({ currentUser, onRequireAuth, onComment, o
         <div key={post.id} style={{ borderBottom: "1px solid #2f3336" }}>
           <Tweet
             id={post.id}
+            authorId={post.authorId}
             author={post.author}
             handle={post.handle}
             authorAvatar={post.authorAvatar}
@@ -111,6 +112,7 @@ export default function BookmarksView({ currentUser, onRequireAuth, onComment, o
             initialLiked={post.liked_by_viewer}
             initialRetweeted={post.reposted_by_viewer}
             initialBookmarked={true}
+            replyToHandle={post.reply_to_handle}
             currentUser={currentUser}
             onRequireAuth={onRequireAuth}
             onComment={() => onComment && onComment(post.id, post.handle)}

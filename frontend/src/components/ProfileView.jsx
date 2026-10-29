@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 import { fetchUserProfile, updateMyProfile, fetchUserPosts, deletePost } from "../api.js";
 import Tweet from "./Tweet.jsx";
+import {
+  getArchivedPostIds,
+  saveArchivedPostIds,
+  getArchivedPostsData,
+  saveArchivedPostsData,
+} from "./ArchiveView.jsx";
 
 export default function ProfileView({
   currentUser,
@@ -23,17 +29,17 @@ export default function ProfileView({
   const [loadingPosts, setLoadingPosts] = useState(false);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser?.id) return;
     loadProfile();
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser?.id) return;
     loadUserPosts();
-  }, [currentUser, activeSubTab]);
+  }, [currentUser?.id, activeSubTab]);
 
   async function loadProfile() {
-    setLoading(true);
+    if (!profile) setLoading(true);
     try {
       const data = await fetchUserProfile(currentUser.id);
       const item = data.item;
@@ -53,12 +59,27 @@ export default function ProfileView({
     try {
       const kind = activeSubTab === "replies" ? "reply" : "original";
       const posts = await fetchUserPosts(currentUser.id, kind);
-      setUserPosts(posts);
+      const archivedIds = new Set(getArchivedPostIds(currentUser.id));
+      setUserPosts(posts.filter((p) => !archivedIds.has(p.id)));
     } catch (err) {
       console.error("Failed to load user posts:", err);
     } finally {
       setLoadingPosts(false);
     }
+  }
+
+  function handleArchivePost(postObj) {
+    if (!currentUser) return;
+    const currentPosts = getArchivedPostsData(currentUser.id);
+    if (!currentPosts.some((p) => p.id === postObj.id)) {
+      saveArchivedPostsData(currentUser.id, [postObj, ...currentPosts]);
+    }
+    const currentIds = getArchivedPostIds(currentUser.id);
+    if (!currentIds.includes(postObj.id)) {
+      saveArchivedPostIds(currentUser.id, [...currentIds, postObj.id]);
+    }
+    setUserPosts((prev) => prev.filter((p) => p.id !== postObj.id));
+    alert("Post archived! You can view it anytime in your private Archive tab.");
   }
 
   async function handleSave(e) {
@@ -316,29 +337,44 @@ export default function ProfileView({
           </div>
         ) : (
           userPosts.map((post) => (
-            <Tweet
-              key={post.id}
-              id={post.id}
-              authorId={post.authorId}
-              author={post.author}
-              handle={post.handle}
-              authorAvatar={post.authorAvatar}
-              text={post.text}
-              image={post.image}
-              time={post.created_at}
-              initialLikes={post.like_count}
-              initialComments={post.comment_count}
-              initialRetweets={post.retweet_count}
-              initialLiked={post.liked_by_viewer}
-              initialRetweeted={post.reposted_by_viewer}
-              initialBookmarked={post.bookmarked_by_viewer}
-              canDelete={true}
-              onDelete={() => handleDeletePost(post.id)}
-              onComment={onComment ? () => onComment(post) : null}
-              onImageClick={onImageClick}
-              currentUser={currentUser}
-              onRequireAuth={onRequireAuth}
-            />
+            <div key={post.id} style={{ borderBottom: "1px solid #2f3336" }}>
+              {activeSubTab === "replies" && (
+                <div style={{ padding: "8px 16px 0 16px", fontSize: "13px", color: "#71767b", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span>💬</span>
+                  <span>
+                    <strong style={{ color: "#e7e9ea" }}>{currentUser.displayName}</strong> replied to{" "}
+                    <span style={{ color: "#1d9bf0", fontWeight: "bold" }}>
+                      @{post.reply_to_handle ? post.reply_to_handle.replace("@", "") : "user"}
+                    </span>
+                  </span>
+                </div>
+              )}
+              <Tweet
+                id={post.id}
+                authorId={post.authorId}
+                author={post.author}
+                handle={post.handle}
+                authorAvatar={post.authorAvatar}
+                text={post.text}
+                image={post.image}
+                time={post.created_at}
+                initialLikes={post.like_count}
+                initialComments={post.comment_count}
+                initialRetweets={post.retweet_count}
+                initialLiked={post.liked_by_viewer}
+                initialRetweeted={post.reposted_by_viewer}
+                initialBookmarked={post.bookmarked_by_viewer}
+                replyToHandle={post.reply_to_handle}
+                isReply={activeSubTab === "replies"}
+                canDelete={true}
+                onDelete={() => handleDeletePost(post.id)}
+                onComment={onComment ? () => onComment(post) : null}
+                onImageClick={onImageClick}
+                currentUser={currentUser}
+                onRequireAuth={onRequireAuth}
+                onArchive={handleArchivePost}
+              />
+            </div>
           ))
         )}
       </div>

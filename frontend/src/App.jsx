@@ -8,6 +8,12 @@ import AuthModal from "./components/AuthModal.jsx";
 import NotificationsView from "./components/NotificationsView.jsx";
 import ProfileView from "./components/ProfileView.jsx";
 import BookmarksView from "./components/BookmarksView.jsx";
+import ArchiveView, {
+  getArchivedPostIds,
+  saveArchivedPostIds,
+  getArchivedPostsData,
+  saveArchivedPostsData,
+} from "./components/ArchiveView.jsx";
 import {
   fetchFeed,
   createPost,
@@ -20,6 +26,7 @@ import {
   fetchMe,
   logoutUser,
   fetchUnreadCount,
+  uploadPostImage,
 } from "./api.js";
 
 export default function App() {
@@ -48,8 +55,12 @@ export default function App() {
   const [lightboxImage, setLightboxImage] = useState(null);
 
   const [composerText, setComposerText] = useState("");
+  const [composerImage, setComposerImage] = useState("");
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [showImageUrlInput, setShowImageUrlInput] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
 
+  const fileInputRef = useRef(null);
   const feedStatusRef = useRef(null);
 
   // Load feed batch (pagination)
@@ -59,9 +70,10 @@ export default function App() {
     setError(null);
     try {
       const data = await fetchFeed(cursor, 10);
+      const archivedIds = new Set(getArchivedPostIds(currentUser?.id));
       setLoadedPosts((prev) => {
         const existingIds = new Set(prev.map((p) => p.id));
-        const newOnes = data.posts.filter((p) => !existingIds.has(p.id));
+        const newOnes = data.posts.filter((p) => !existingIds.has(p.id) && !archivedIds.has(p.id));
         return [...prev, ...newOnes];
       });
       setHasMore(data.has_more);
@@ -72,7 +84,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [cursor, loading, hasMore]);
+  }, [cursor, loading, hasMore, currentUser?.id]);
 
   // Refresh feed from beginning (e.g., when logging in, switching account, or following someone)
   const refreshFeed = useCallback(async () => {
@@ -81,7 +93,8 @@ export default function App() {
     setCursor(null);
     try {
       const data = await fetchFeed(null, 10);
-      setLoadedPosts(data.posts || []);
+      const archivedIds = new Set(getArchivedPostIds(currentUser?.id));
+      setLoadedPosts((data.posts || []).filter((p) => !archivedIds.has(p.id)));
       setHasMore(data.has_more);
       setCursor(data.next_cursor ?? null);
     } catch (err) {
@@ -90,7 +103,21 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentUser?.id]);
+
+  function handleArchiveFromFeed(postObj) {
+    if (!currentUser) return;
+    const currentPosts = getArchivedPostsData(currentUser.id);
+    if (!currentPosts.some((p) => p.id === postObj.id)) {
+      saveArchivedPostsData(currentUser.id, [postObj, ...currentPosts]);
+    }
+    const currentIds = getArchivedPostIds(currentUser.id);
+    if (!currentIds.includes(postObj.id)) {
+      saveArchivedPostIds(currentUser.id, [...currentIds, postObj.id]);
+    }
+    setLoadedPosts((prev) => prev.filter((p) => p.id !== postObj.id));
+    alert("Post archived! You can view it anytime in your private Archive tab.");
+  }
 
   // Update notification count
   const refreshUnreadCount = useCallback(async () => {
@@ -102,28 +129,36 @@ export default function App() {
     }
   }, []);
 
-  // On mount: check auth session, fetch feed, and fetch notifications count
+  // On mount: check auth session, fetch initial feed, and fetch notifications count once
   useEffect(() => {
     async function init() {
-      const me = await fetchMe();
-      if (me) {
-        setCurrentUser(me);
-        refreshUnreadCount();
+      try {
+        const me = await fetchMe();
+        if (me) {
+          setCurrentUser(me);
+          try {
+            const count = await fetchUnreadCount();
+            setUnreadCount(count);
+          } catch {}
+        }
+      } catch (e) {
+        console.error("fetchMe error on init:", e);
       }
       refreshFeed();
     }
     init();
-  }, [refreshFeed, refreshUnreadCount]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Periodically refresh notification badge every 4 seconds when logged in
+  // Periodically refresh notification badge every 10 seconds when logged in
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser?.id) return;
     refreshUnreadCount();
     const interval = setInterval(() => {
       refreshUnreadCount();
-    }, 4000);
+    }, 10000);
     return () => clearInterval(interval);
-  }, [currentUser, refreshUnreadCount]);
+  }, [currentUser?.id, refreshUnreadCount]);
 
   // Infinite scroll observer
   useEffect(() => {
@@ -241,19 +276,33 @@ export default function App() {
     }
   }
 
-  // Handle post creation
+  // Handle post creation with optional image
   async function handleCreatePost(e) {
     e.preventDefault();
     if (!currentUser) {
       setIsAuthModalOpen(true);
       return;
     }
-    const text = composerText.trim();
+    const rawText = composerText.trim();
+    // If an image is provided without text, default caption so backend length validation succeeds
+    const text = rawText || (composerImage ? "📷" : "");
     if (!text || isPosting) return;
 
     setIsPosting(true);
     try {
-      const res = await createPost({ kind: "original", text });
+      const media = composerImage
+        ? [
+            {
+              altText: rawText ? `Image for: ${rawText.slice(0, 40)}` : "Tweet image",
+              smallUrl: composerImage,
+              largeUrl: composerImage,
+              width: 800,
+              height: 600,
+            },
+          ]
+        : null;
+
+      const res = await createPost({ kind: "original", text, media });
       const item = res.item;
       const newPost = {
         id: item.id,
@@ -262,7 +311,7 @@ export default function App() {
         handle: "@" + (item.author?.handle || currentUser.handle),
         authorAvatar: item.author?.avatar?.smallUrl || currentUser.avatar?.smallUrl,
         text: item.text,
-        image: item.media?.[0]?.largeUrl || null,
+        image: item.media?.[0]?.largeUrl || item.media?.[0]?.smallUrl || composerImage || null,
         like_count: 0,
         comment_count: 0,
         retweet_count: 0,
@@ -272,10 +321,28 @@ export default function App() {
       };
       setLoadedPosts((prev) => [newPost, ...prev]);
       setComposerText("");
+      setComposerImage("");
+      setShowImageUrlInput(false);
     } catch (err) {
       alert("Failed to create post: " + err.message);
     } finally {
       setIsPosting(false);
+    }
+  }
+
+  async function handleFileSelect(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingImage(true);
+    try {
+      const url = await uploadPostImage(file);
+      setComposerImage(url);
+      setShowImageUrlInput(false);
+    } catch (err) {
+      alert("Failed to upload image: " + err.message);
+    } finally {
+      setIsUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
@@ -489,6 +556,18 @@ export default function App() {
         )}
 
         {/* ============================================================== */}
+        {/* TAB: ARCHIVE VIEW                                             */}
+        {/* ============================================================== */}
+        {activeTab === "archive" && (
+          <ArchiveView
+            currentUser={currentUser}
+            onRequireAuth={() => setIsAuthModalOpen(true)}
+            onImageClick={setLightboxImage}
+            onPostUnarchived={() => refreshFeed()}
+          />
+        )}
+
+        {/* ============================================================== */}
         {/* TAB: BOOKMARKS VIEW (PY-P1-02)                                */}
         {/* ============================================================== */}
         {activeTab === "bookmarks" && (
@@ -608,6 +687,7 @@ export default function App() {
                   <Tweet
                     key={post.id}
                     id={post.id}
+                    authorId={post.authorId}
                     author={post.author}
                     handle={post.handle}
                     authorAvatar={post.authorAvatar}
@@ -620,8 +700,10 @@ export default function App() {
                     initialLiked={post.liked_by_viewer}
                     initialRetweeted={post.reposted_by_viewer}
                     initialBookmarked={post.bookmarked_by_viewer}
+                    replyToHandle={post.reply_to_handle}
                     currentUser={currentUser}
                     onRequireAuth={() => setIsAuthModalOpen(true)}
+                    onArchive={handleArchiveFromFeed}
                     canDelete={
                       currentUser &&
                       (post.authorId === currentUser.id ||
@@ -664,38 +746,258 @@ export default function App() {
                     alt=""
                     style={{ width: "40px", height: "40px", borderRadius: "50%" }}
                   />
-                  <textarea
-                    value={composerText}
-                    onChange={(e) => setComposerText(e.target.value)}
-                    placeholder="What is happening?!"
-                    maxLength={280}
-                    rows={3}
-                    style={{
-                      width: "100%",
-                      background: "transparent",
-                      border: "none",
-                      outline: "none",
-                      color: "#e7e9ea",
-                      fontSize: "18px",
-                      resize: "none",
-                      fontFamily: "inherit",
-                    }}
-                  />
+                  <div style={{ flex: 1 }}>
+                    <textarea
+                      value={composerText}
+                      onChange={(e) => setComposerText(e.target.value)}
+                      placeholder="What is happening?!"
+                      maxLength={280}
+                      rows={3}
+                      style={{
+                        width: "100%",
+                        background: "transparent",
+                        border: "none",
+                        outline: "none",
+                        color: "#e7e9ea",
+                        fontSize: "18px",
+                        resize: "none",
+                        fontFamily: "inherit",
+                      }}
+                    />
+
+                    {/* Image Upload Status */}
+                    {isUploadingImage && (
+                      <div
+                        style={{
+                          padding: "16px",
+                          textAlign: "center",
+                          color: "#1d9bf0",
+                          background: "#16181c",
+                          borderRadius: "16px",
+                          marginBottom: "10px",
+                          border: "1px dashed #1d9bf0",
+                          fontSize: "14px",
+                        }}
+                      >
+                        ⏳ Uploading image from computer...
+                      </div>
+                    )}
+
+                    {/* Image Preview inside Composer */}
+                    {composerImage && (
+                      <div
+                        style={{
+                          position: "relative",
+                          marginBottom: "12px",
+                          borderRadius: "16px",
+                          overflow: "hidden",
+                          maxHeight: "300px",
+                          border: "1px solid #2f3336",
+                        }}
+                      >
+                        <img
+                          src={composerImage}
+                          alt="Attached media"
+                          style={{
+                            width: "100%",
+                            maxHeight: "300px",
+                            objectFit: "cover",
+                            display: "block",
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setComposerImage("")}
+                          title="Remove image"
+                          style={{
+                            position: "absolute",
+                            top: "8px",
+                            right: "8px",
+                            background: "rgba(15, 20, 25, 0.75)",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: "50%",
+                            width: "32px",
+                            height: "32px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                            fontSize: "16px",
+                            backdropFilter: "blur(4px)",
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Optional URL Input Popover/Bar */}
+                    {showImageUrlInput && (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "8px",
+                          background: "#16181c",
+                          padding: "12px",
+                          borderRadius: "12px",
+                          border: "1px solid #2f3336",
+                          marginBottom: "12px",
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <input
+                            type="url"
+                            placeholder="Paste image URL (https://...)"
+                            value={composerImage}
+                            onChange={(e) => setComposerImage(e.target.value)}
+                            style={{
+                              flex: 1,
+                              background: "#000",
+                              border: "1px solid #333",
+                              borderRadius: "8px",
+                              padding: "8px 12px",
+                              color: "#fff",
+                              fontSize: "14px",
+                              outline: "none",
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowImageUrlInput(false)}
+                            style={{
+                              background: "#1d9bf0",
+                              color: "#fff",
+                              border: "none",
+                              borderRadius: "8px",
+                              padding: "8px 14px",
+                              cursor: "pointer",
+                              fontSize: "13px",
+                              fontWeight: "bold",
+                            }}
+                          >
+                            Done
+                          </button>
+                        </div>
+                        {/* Quick Presets */}
+                        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+                          <span style={{ fontSize: "12px", color: "#71767b" }}>Quick sample:</span>
+                          {[
+                            { label: "🌄 Nature", url: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800" },
+                            { label: "💻 Tech", url: "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800" },
+                            { label: "☕ Coffee", url: "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800" },
+                            { label: "🐱 Cat", url: "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=800" },
+                            { label: "🌃 City", url: "https://images.unsplash.com/photo-1477959858617-67f30bc75b82?w=800" },
+                          ].map((sample) => (
+                            <button
+                              key={sample.label}
+                              type="button"
+                              onClick={() => {
+                                setComposerImage(sample.url);
+                                setShowImageUrlInput(false);
+                              }}
+                              style={{
+                                background: "#202327",
+                                border: "1px solid #333",
+                                borderRadius: "999px",
+                                color: "#e7e9ea",
+                                padding: "3px 10px",
+                                fontSize: "12px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {sample.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
+
+                {/* Hidden File Input for Image Upload */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  onChange={handleFileSelect}
+                  style={{ display: "none" }}
+                />
+
+                {/* Bottom Toolbar */}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    paddingLeft: "52px",
+                  }}
+                >
+                  <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                    {/* Add Image Button (File Picker) */}
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      title="Upload image from computer"
+                      disabled={isPosting || isUploadingImage}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "#1d9bf0",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        fontSize: "14px",
+                        padding: "6px 10px",
+                        borderRadius: "999px",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(29, 155, 240, 0.1)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                    >
+                      <span style={{ fontSize: "16px" }}>🖼️</span>
+                      <span style={{ fontSize: "13px", fontWeight: "600" }}>Upload Image</span>
+                    </button>
+
+                    {/* Image URL Button */}
+                    <button
+                      type="button"
+                      onClick={() => setShowImageUrlInput(!showImageUrlInput)}
+                      title="Add image via link or sample"
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: showImageUrlInput ? "#fff" : "#1d9bf0",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        fontSize: "14px",
+                        padding: "6px 10px",
+                        borderRadius: "999px",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(29, 155, 240, 0.1)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                    >
+                      <span style={{ fontSize: "16px" }}>🔗</span>
+                      <span style={{ fontSize: "13px", fontWeight: "600" }}>Image URL</span>
+                    </button>
+                  </div>
+
                   <button
                     type="submit"
-                    disabled={!composerText.trim() || isPosting}
+                    disabled={(!composerText.trim() && !composerImage) || isPosting || isUploadingImage}
                     style={{
                       background: "#1d9bf0",
                       color: "white",
                       border: "none",
                       borderRadius: "9999px",
-                      padding: "8px 20px",
+                      padding: "8px 22px",
                       fontSize: "15px",
                       fontWeight: "700",
-                      cursor: composerText.trim() && !isPosting ? "pointer" : "default",
-                      opacity: composerText.trim() && !isPosting ? 1 : 0.5,
+                      cursor: (composerText.trim() || composerImage) && !isPosting && !isUploadingImage ? "pointer" : "default",
+                      opacity: (composerText.trim() || composerImage) && !isPosting && !isUploadingImage ? 1 : 0.5,
                     }}
                   >
                     {isPosting ? "Posting..." : "Post"}
@@ -753,6 +1055,7 @@ export default function App() {
                   <div key={post.id} style={{ borderBottom: "1px solid #2f3336" }}>
                     <Tweet
                       id={post.id}
+                      authorId={post.authorId}
                       author={post.author}
                       handle={post.handle}
                       authorAvatar={post.authorAvatar}
@@ -765,8 +1068,10 @@ export default function App() {
                       initialLiked={post.liked_by_viewer}
                       initialRetweeted={post.reposted_by_viewer}
                       initialBookmarked={post.bookmarked_by_viewer}
+                      replyToHandle={post.reply_to_handle}
                       currentUser={currentUser}
                       onRequireAuth={() => setIsAuthModalOpen(true)}
+                      onArchive={handleArchiveFromFeed}
                       canDelete={
                         currentUser &&
                         (post.authorId === currentUser.id ||

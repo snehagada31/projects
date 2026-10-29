@@ -8,6 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+import os
+from fastapi.staticfiles import StaticFiles
+
 from app.config import settings
 from app.api import health, feed, posts, users, auth, notifications
 from app.common.request_id import RequestIdMiddleware
@@ -64,6 +67,10 @@ def create_app() -> FastAPI:
     app.include_router(posts.router)
     app.include_router(users.router)
     app.include_router(notifications.router)
+
+    uploads_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "uploads"))
+    os.makedirs(uploads_dir, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
     return app
 
