@@ -30,10 +30,17 @@ def _sync_hash_password(password: str) -> str:
 
 
 def _sync_verify_password(plain_password: str, stored_hash: str) -> bool:
-    """Verify a password against a stored ``salt$hash`` value.
+    """Verify a password against stored hash (supporting both bcrypt and PBKDF2).
 
     Uses constant‑time comparison to prevent timing attacks.
     """
+    if stored_hash.startswith(("$2a$", "$2b$", "$2y$")):
+        try:
+            import bcrypt
+            return bcrypt.checkpw(plain_password.encode("utf-8"), stored_hash.encode("utf-8"))
+        except Exception:
+            return False
+
     try:
         salt, hash_val = stored_hash.split("$")
     except ValueError:
