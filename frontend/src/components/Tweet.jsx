@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { likePost, unlikePost, repostPost, unrepostPost, bookmarkPost, unbookmarkPost } from "../api.js";
+import { likePost, unlikePost, repostPost, unrepostPost, bookmarkPost, unbookmarkPost, editPost } from "../api.js";
 
 function formatTweetTime(isoString) {
   if (!isoString) return "";
@@ -12,6 +12,7 @@ function formatTweetTime(isoString) {
 
 export default function Tweet({
   id,
+  authorId,
   author,
   handle,
   authorAvatar,
@@ -40,6 +41,24 @@ export default function Tweet({
   const [retweetCount, setRetweetCount] = useState(initialRetweets);
   const [toastMessage, setToastMessage] = useState(null);
 
+  // Edit states
+  const [isEditing, setIsEditing] = useState(false);
+  const [currentText, setCurrentText] = useState(text || "");
+  const [editText, setEditText] = useState(text || "");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  const cleanPostHandle = (handle || "").replace("@", "").toLowerCase();
+  const cleanUserHandle = (currentUser?.handle || "").replace("@", "").toLowerCase();
+  const isOwnPost = Boolean(
+    currentUser && (
+      (authorId && String(currentUser.id) === String(authorId)) ||
+      (cleanPostHandle && cleanUserHandle && cleanPostHandle === cleanUserHandle)
+    )
+  );
+
+  // Time window: allow editing only within 15 minutes of creation
+  const isWithinEditWindow = time ? (Date.now() - new Date(time).getTime()) <= 15 * 60 * 1000 : true;
+
   useEffect(() => {
     setLiked(initialLiked);
   }, [initialLiked]);
@@ -61,14 +80,24 @@ export default function Tweet({
   }, [initialRetweets]);
 
   useEffect(() => {
+    setCurrentText(text || "");
+    setEditText(text || "");
+  }, [text]);
+
+  useEffect(() => {
     if (!toastMessage) return;
-    const timer = setTimeout(() => setToastMessage(null), 1500);
+    const timer = setTimeout(() => setToastMessage(null), 1800);
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
   async function handleLike() {
     if (!currentUser && onRequireAuth) {
       onRequireAuth();
+      return;
+    }
+
+    if (isOwnPost) {
+      setToastMessage("You cannot like your own post");
       return;
     }
 
@@ -91,7 +120,6 @@ export default function Tweet({
       }
     } catch (err) {
       console.error("Failed to update like on backend:", err);
-      // Rollback optimistic update
       setLiked(!nowLiked);
       setLikeCount((prev) => prev + (nowLiked ? -1 : 1));
       setToastMessage(err.message || "Error updating like");
@@ -101,6 +129,11 @@ export default function Tweet({
   async function handleRetweet() {
     if (!currentUser && onRequireAuth) {
       onRequireAuth();
+      return;
+    }
+
+    if (isOwnPost) {
+      setToastMessage("You cannot repost your own post");
       return;
     }
 
@@ -123,7 +156,6 @@ export default function Tweet({
       }
     } catch (err) {
       console.error("Failed to update repost on backend:", err);
-      // Rollback optimistic update
       setRetweeted(!nowRetweeted);
       setRetweetCount((prev) => prev + (nowRetweeted ? -1 : 1));
       setToastMessage(err.message || "Error updating repost");
@@ -163,6 +195,22 @@ export default function Tweet({
     }
   }
 
+  async function handleSaveEdit(e) {
+    e.preventDefault();
+    if (!editText.trim()) return;
+    setIsSavingEdit(true);
+    try {
+      await editPost(id, editText.trim());
+      setCurrentText(editText.trim());
+      setIsEditing(false);
+      setToastMessage("Post updated!");
+    } catch (err) {
+      alert("Failed to edit post: " + err.message);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }
+
   async function handleShare() {
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -187,28 +235,110 @@ export default function Tweet({
           </div>
         </div>
 
-        {canDelete && onDelete && (
-          <button
-            onClick={onDelete}
-            title="Delete Post"
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "#71767b",
-              cursor: "pointer",
-              padding: "4px 8px",
-              fontSize: "14px",
-              borderRadius: "4px",
-            }}
-            onMouseEnter={(e) => (e.target.style.color = "#f4212e")}
-            onMouseLeave={(e) => (e.target.style.color = "#71767b")}
-          >
-            🗑️ Delete
-          </button>
+        {(canDelete || isOwnPost) && (
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            {isWithinEditWindow ? (
+              <button
+                onClick={() => setIsEditing(!isEditing)}
+                title="Edit post (within 15m)"
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#1d9bf0",
+                  cursor: "pointer",
+                  padding: "4px 6px",
+                  fontSize: "13px",
+                  borderRadius: "4px",
+                }}
+              >
+                ✏️ Edit
+              </button>
+            ) : (
+              <span
+                title="Edit window expired (over 15 minutes since posting)"
+                style={{ color: "#536471", fontSize: "12px", cursor: "help" }}
+              >
+                ⏳ Locked
+              </span>
+            )}
+
+            {onDelete && (
+              <button
+                onClick={onDelete}
+                title="Delete Post"
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#71767b",
+                  cursor: "pointer",
+                  padding: "4px 6px",
+                  fontSize: "13px",
+                  borderRadius: "4px",
+                }}
+                onMouseEnter={(e) => (e.target.style.color = "#f4212e")}
+                onMouseLeave={(e) => (e.target.style.color = "#71767b")}
+              >
+                🗑️ Delete
+              </button>
+            )}
+          </div>
         )}
       </div>
 
-      <p style={{ marginTop: "10px", marginBottom: "10px", wordBreak: "break-word" }}>{text}</p>
+      {isEditing ? (
+        <form onSubmit={handleSaveEdit} style={{ marginTop: "10px", marginBottom: "10px" }}>
+          <textarea
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            rows={3}
+            style={{
+              width: "100%",
+              background: "#000",
+              border: "1px solid #1d9bf0",
+              borderRadius: "8px",
+              color: "#fff",
+              padding: "8px",
+              fontSize: "15px",
+              resize: "none",
+            }}
+          />
+          <div style={{ display: "flex", gap: "8px", marginTop: "6px", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={() => { setIsEditing(false); setEditText(currentText); }}
+              style={{
+                background: "transparent",
+                border: "1px solid #536471",
+                color: "#71767b",
+                padding: "4px 12px",
+                borderRadius: "999px",
+                cursor: "pointer",
+                fontSize: "13px",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSavingEdit || !editText.trim()}
+              style={{
+                background: "#1d9bf0",
+                border: "none",
+                color: "#fff",
+                fontWeight: "bold",
+                padding: "4px 14px",
+                borderRadius: "999px",
+                cursor: isSavingEdit ? "not-allowed" : "pointer",
+                fontSize: "13px",
+              }}
+            >
+              {isSavingEdit ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <p style={{ marginTop: "10px", marginBottom: "10px", wordBreak: "break-word" }}>{currentText}</p>
+      )}
 
       {image && (
         <img
@@ -232,6 +362,8 @@ export default function Tweet({
               className={`action-retweet${retweeted ? " retweeted" : ""}`}
               aria-label="Repost"
               onClick={handleRetweet}
+              style={isOwnPost ? { opacity: 0.5, cursor: "not-allowed" } : {}}
+              title={isOwnPost ? "You cannot repost your own post" : "Repost"}
             >
               🔁 <span>{retweetCount}</span>
             </button>
@@ -242,6 +374,8 @@ export default function Tweet({
               className={`action-like${liked ? " liked" : ""}`}
               aria-label="Like"
               onClick={handleLike}
+              style={isOwnPost ? { opacity: 0.5, cursor: "not-allowed" } : {}}
+              title={isOwnPost ? "You cannot like your own post" : "Like"}
             >
               {liked ? "♥" : "♡"} <span>{likeCount}</span>
             </button>

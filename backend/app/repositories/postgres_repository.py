@@ -231,6 +231,23 @@ class PostgresSocialRepository:
         res = await self.session.execute(stmt)
         return list(res.scalars().all())
 
+    async def get_posts_by_author(self, author_id: str, kind: str | None = None) -> list[Post]:
+        try:
+            uid = uuid.UUID(str(author_id))
+        except (ValueError, TypeError):
+            return []
+        conditions = [Post.author_id == uid]
+        if kind:
+            conditions.append(Post.kind == kind)
+        stmt = (
+            select(Post)
+            .options(selectinload(Post.author))
+            .where(and_(*conditions))
+            .order_by(desc(Post.created_at), desc(Post.id))
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
     async def get_repost_count(self, post_id: str) -> int:
         stmt = select(func.count(Post.id)).where(Post.repost_of_id == uuid.UUID(post_id), Post.kind == "repost")
         res = await self.session.execute(stmt)

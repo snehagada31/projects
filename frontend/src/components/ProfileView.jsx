@@ -1,7 +1,14 @@
 import { useState, useEffect } from "react";
-import { fetchUserProfile, updateMyProfile } from "../api.js";
+import { fetchUserProfile, updateMyProfile, fetchUserPosts, deletePost } from "../api.js";
+import Tweet from "./Tweet.jsx";
 
-export default function ProfileView({ currentUser, onUserUpdated, onRequireAuth }) {
+export default function ProfileView({
+  currentUser,
+  onUserUpdated,
+  onRequireAuth,
+  onComment,
+  onImageClick,
+}) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -10,10 +17,20 @@ export default function ProfileView({ currentUser, onUserUpdated, onRequireAuth 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
+  // Sub-tab: "posts" | "replies"
+  const [activeSubTab, setActiveSubTab] = useState("posts");
+  const [userPosts, setUserPosts] = useState([]);
+  const [loadingPosts, setLoadingPosts] = useState(false);
+
   useEffect(() => {
     if (!currentUser) return;
     loadProfile();
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    loadUserPosts();
+  }, [currentUser, activeSubTab]);
 
   async function loadProfile() {
     setLoading(true);
@@ -31,6 +48,19 @@ export default function ProfileView({ currentUser, onUserUpdated, onRequireAuth 
     }
   }
 
+  async function loadUserPosts() {
+    setLoadingPosts(true);
+    try {
+      const kind = activeSubTab === "replies" ? "reply" : "original";
+      const posts = await fetchUserPosts(currentUser.id, kind);
+      setUserPosts(posts);
+    } catch (err) {
+      console.error("Failed to load user posts:", err);
+    } finally {
+      setLoadingPosts(false);
+    }
+  }
+
   async function handleSave(e) {
     e.preventDefault();
     setSaving(true);
@@ -45,6 +75,18 @@ export default function ProfileView({ currentUser, onUserUpdated, onRequireAuth 
       setError(err.message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDeletePost(postId) {
+    if (!window.confirm("Are you sure you want to delete this post?")) return;
+    try {
+      await deletePost(postId);
+      setUserPosts((prev) => prev.filter((p) => p.id !== postId));
+      // update postCount locally
+      setProfile((prev) => prev ? { ...prev, postCount: Math.max(0, (prev.postCount || 1) - 1) } : prev);
+    } catch (err) {
+      alert("Failed to delete post: " + err.message);
     }
   }
 
@@ -220,6 +262,86 @@ export default function ProfileView({ currentUser, onUserUpdated, onRequireAuth 
           </div>
         </div>
       )}
+
+      {/* Sub-tabs: Posts / Replies */}
+      <div style={{ display: "flex", borderBottom: "1px solid #2f3336", marginTop: "24px", marginBottom: "8px" }}>
+        <button
+          onClick={() => setActiveSubTab("posts")}
+          style={{
+            flex: 1,
+            background: "transparent",
+            border: "none",
+            borderBottom: activeSubTab === "posts" ? "4px solid #1d9bf0" : "4px solid transparent",
+            color: activeSubTab === "posts" ? "#fff" : "#71767b",
+            fontWeight: "bold",
+            padding: "12px",
+            cursor: "pointer",
+            fontSize: "15px",
+          }}
+        >
+          Posts ({profile?.postCount ?? userPosts.length})
+        </button>
+        <button
+          onClick={() => setActiveSubTab("replies")}
+          style={{
+            flex: 1,
+            background: "transparent",
+            border: "none",
+            borderBottom: activeSubTab === "replies" ? "4px solid #1d9bf0" : "4px solid transparent",
+            color: activeSubTab === "replies" ? "#fff" : "#71767b",
+            fontWeight: "bold",
+            padding: "12px",
+            cursor: "pointer",
+            fontSize: "15px",
+          }}
+        >
+          Replies
+        </button>
+      </div>
+
+      {/* User Posts List */}
+      <div>
+        {loadingPosts ? (
+          <p style={{ textAlign: "center", color: "#71767b", padding: "20px" }}>Loading {activeSubTab}...</p>
+        ) : userPosts.length === 0 ? (
+          <div style={{ textAlign: "center", color: "#71767b", padding: "40px 20px" }}>
+            <p style={{ fontSize: "16px", fontWeight: "bold", color: "#e7e9ea" }}>
+              {activeSubTab === "posts" ? "No posts yet" : "No replies yet"}
+            </p>
+            <p style={{ fontSize: "14px", marginTop: "4px" }}>
+              {activeSubTab === "posts"
+                ? "When you publish tweets, they will appear here on your profile."
+                : "Replies and comments you post will appear here."}
+            </p>
+          </div>
+        ) : (
+          userPosts.map((post) => (
+            <Tweet
+              key={post.id}
+              id={post.id}
+              authorId={post.authorId}
+              author={post.author}
+              handle={post.handle}
+              authorAvatar={post.authorAvatar}
+              text={post.text}
+              image={post.image}
+              time={post.created_at}
+              initialLikes={post.like_count}
+              initialComments={post.comment_count}
+              initialRetweets={post.retweet_count}
+              initialLiked={post.liked_by_viewer}
+              initialRetweeted={post.reposted_by_viewer}
+              initialBookmarked={post.bookmarked_by_viewer}
+              canDelete={true}
+              onDelete={() => handleDeletePost(post.id)}
+              onComment={onComment ? () => onComment(post) : null}
+              onImageClick={onImageClick}
+              currentUser={currentUser}
+              onRequireAuth={onRequireAuth}
+            />
+          ))
+        )}
+      </div>
     </div>
   );
 }

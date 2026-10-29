@@ -8,6 +8,7 @@ Post endpoints:
 - GET /search/posts
 """
 import uuid
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Request, status
 from app.repositories.social_repository import SocialRepository
 from app.api.feed import get_social_repository
@@ -253,6 +254,23 @@ async def edit_post(
     post_kind = post["kind"] if isinstance(post, dict) else post.kind
     if post_kind not in ("original", "reply"):
         raise ValidationError("Reposts cannot be edited", field="kind", reason="cannot_edit_repost", status_code=422)
+
+    created_at = post.get("created_at") if isinstance(post, dict) else getattr(post, "created_at", None)
+    if created_at:
+        try:
+            if isinstance(created_at, str):
+                c_time = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            else:
+                c_time = created_at
+            if hasattr(c_time, "tzinfo") and c_time.tzinfo is None:
+                c_time = c_time.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            if (now - c_time).total_seconds() > 15 * 60:
+                raise ValidationError("Posts can only be edited within 15 minutes of posting", field="createdAt", reason="edit_window_expired", status_code=422)
+        except ValidationError:
+            raise
+        except Exception:
+            pass
 
     updated = await maybe_await(repo.update_post_text(post_id, payload.text))
     item = await build_post_item(repo, updated, viewer_id=str(current_user.id))

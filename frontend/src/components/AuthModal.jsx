@@ -18,28 +18,33 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
   const [bio, setBio] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
 
   if (!isOpen) return null;
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError(null);
+    setSuccessMsg(null);
     setLoading(true);
 
     if (mode === "register" && password.trim().length < 8) {
       setError("Password must be at least 8 characters long");
+      setLoading(false);
       return;
     }
 
     try {
-      let data;
       if (mode === "login") {
-        data = await loginUser({ handle: handle.trim(), password });
+        const data = await loginUser({ handle: handle.trim(), password });
+        onAuthSuccess(data.user);
+        onClose();
       } else {
-        data = await registerUser({ handle: handle.trim(), displayName: displayName.trim(), password, bio: bio.trim() });
+        await registerUser({ handle: handle.trim(), displayName: displayName.trim(), password, bio: bio.trim() }, false);
+        setSuccessMsg(`Account @${handle.trim()} created successfully! Please sign in with your password.`);
+        setMode("login");
+        setPassword("");
       }
-      onAuthSuccess(data.user);
-      onClose();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -164,6 +169,12 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
             Register
           </button>
         </div>
+
+        {successMsg && (
+          <div style={{ background: "rgba(0, 186, 124, 0.15)", border: "1px solid #00ba7c", color: "#00ba7c", padding: "10px", borderRadius: "8px", marginBottom: "14px", fontSize: "14px" }}>
+            ✓ {successMsg}
+          </div>
+        )}
 
         {error && (
           <div style={{ background: "rgba(244, 33, 46, 0.1)", border: "1px solid #f4212e", color: "#f4212e", padding: "10px", borderRadius: "8px", marginBottom: "14px", fontSize: "14px" }}>

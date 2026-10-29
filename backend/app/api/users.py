@@ -19,7 +19,8 @@ from app.schemas.user import (
 from app.schemas.pagination import PaginatedResponse
 from app.schemas.auth import AuthMessageResponse
 from app.common.errors import ValidationError, NotFoundError, AuthorizationError
-from app.services.post_service import maybe_await
+from app.services.post_service import maybe_await, build_post_item
+from app.schemas.post import PostItem, ProfileMediaItem
 from app.services.auth_service import get_current_user, get_optional_current_user
 
 from app.db.models import User
@@ -239,6 +240,27 @@ async def get_user_profile(
     )
 
     return UserProfileResponse(item=item)
+
+
+@router.get("/users/{user_id}/posts", response_model=PaginatedResponse[PostItem])
+async def get_user_posts(
+    user_id: str,
+    kind: str | None = Query(None),
+    current_user: User | None = Depends(get_optional_current_user),
+    repo: SocialRepository = Depends(get_social_repository),
+):
+    _validate_user_id(user_id)
+    user = await maybe_await(repo.get_user(user_id))
+    if user is None:
+        raise NotFoundError("user not found")
+
+    if hasattr(repo, "get_posts_by_author"):
+        posts = await maybe_await(repo.get_posts_by_author(user_id, kind=kind))
+    else:
+        posts = []
+    viewer_id = str(current_user.id) if current_user else None
+    items = [await build_post_item(repo, p, viewer_id=viewer_id) for p in posts]
+    return PaginatedResponse(items=items, next_cursor=None, has_more=False)
 
 
 from fastapi import Request

@@ -508,6 +508,8 @@ export default function App() {
             currentUser={currentUser}
             onUserUpdated={(updated) => setCurrentUser(updated)}
             onRequireAuth={() => setIsAuthModalOpen(true)}
+            onComment={openReplyModal}
+            onImageClick={setLightboxImage}
           />
         )}
 

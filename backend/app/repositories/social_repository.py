@@ -135,6 +135,12 @@ class FixtureSocialRepository:
         media_list = [m for m in self.media if m["post_id"] in user_original_ids]
         return sorted(media_list, key=lambda m: (m["created_at"], m["id"]), reverse=True)
 
+    def get_posts_by_author(self, author_id: str, kind: str | None = None) -> list[dict]:
+        res = [p for p in self.all_posts if p.get("author_id") == author_id]
+        if kind:
+            res = [p for p in res if p.get("kind") == kind]
+        return sorted(res, key=lambda p: (p.get("created_at") or "", str(p["id"])), reverse=True)
+
     def get_repost_count(self, post_id: str) -> int:
         return sum(1 for p in self.all_posts if p.get("kind") == "repost" and p.get("repost_of_id") == post_id)
 

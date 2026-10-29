@@ -36,7 +36,7 @@ function formatApiError(data, fallbackMsg) {
   return data?.error?.message || fallbackMsg;
 }
 
-export async function registerUser({ handle, displayName, password, bio = "" }) {
+export async function registerUser({ handle, displayName, password, bio = "" }, autoLogin = false) {
   const res = await fetch(`${API_BASE}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -46,7 +46,7 @@ export async function registerUser({ handle, displayName, password, bio = "" }) 
   if (!res.ok) {
     throw new Error(formatApiError(data, "Registration failed"));
   }
-  if (data.token) {
+  if (autoLogin && data.token) {
     setToken(data.token);
   }
   return data;
@@ -297,6 +297,31 @@ export async function fetchUserProfile(userId) {
   const res = await fetch(`${API_BASE}/users/${userId}`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error("Failed to fetch profile");
   return res.json();
+}
+
+export async function fetchUserPosts(userId, kind = null) {
+  const url = kind
+    ? `${API_BASE}/users/${userId}/posts?kind=${kind}`
+    : `${API_BASE}/users/${userId}/posts`;
+  const res = await fetch(url, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error("Failed to fetch user posts");
+  const data = await res.json();
+  return (data.items || []).map((item) => ({
+    id: item.id,
+    authorId: item.author?.id,
+    author: item.author?.displayName || item.author?.handle || "User",
+    handle: "@" + (item.author?.handle || "user"),
+    authorAvatar: item.author?.avatar?.smallUrl || item.author?.avatar?.largeUrl || null,
+    text: item.text,
+    image: item.media?.[0]?.largeUrl || item.media?.[0]?.smallUrl || null,
+    like_count: item.likeCount ?? 0,
+    comment_count: item.replyCount ?? 0,
+    retweet_count: item.retweetCount ?? 0,
+    liked_by_viewer: item.likedByViewer ?? false,
+    reposted_by_viewer: item.repostedByViewer ?? false,
+    bookmarked_by_viewer: item.bookmarkedByViewer ?? false,
+    created_at: item.createdAt,
+  }));
 }
 
 export async function updateMyProfile(profileData) {
