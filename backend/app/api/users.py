@@ -26,6 +26,7 @@ from app.services.auth_service import get_current_user, get_optional_current_use
 from app.db.models import User
 from app.config import settings
 from app.common.fake_io import fake_io_operation
+from app.common.activity_logger import log_activity
 
 
 router = APIRouter()
@@ -366,6 +367,18 @@ async def follow_user(
 
     await maybe_await(repo.add_follow(str(current_user.id), user_id))
     follower_count = await maybe_await(repo.get_follower_count(user_id))
+
+    try:
+        target_handle = target.get("handle") if isinstance(target, dict) else getattr(target, "handle", "user")
+        log_activity(
+            actor=current_user.handle,
+            action="followed",
+            target=f"@{target_handle}",
+            details=f"target_id={user_id}, total_followers={follower_count}",
+        )
+    except Exception:
+        pass
+
     return FollowResponse(user_id=user_id, following=True, follower_count=follower_count)
 
 
@@ -378,6 +391,21 @@ async def unfollow_user(
     _validate_user_id(user_id)
     await maybe_await(repo.remove_follow(str(current_user.id), user_id))
     follower_count = await maybe_await(repo.get_follower_count(user_id))
+
+    try:
+        target = await maybe_await(repo.get_user(user_id))
+        target_handle = "user"
+        if target:
+            target_handle = target.get("handle") if isinstance(target, dict) else getattr(target, "handle", "user")
+        log_activity(
+            actor=current_user.handle,
+            action="unfollowed",
+            target=f"@{target_handle}",
+            details=f"target_id={user_id}, total_followers={follower_count}",
+        )
+    except Exception:
+        pass
+
     return FollowResponse(user_id=user_id, following=False, follower_count=follower_count)
 
 

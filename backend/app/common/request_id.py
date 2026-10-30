@@ -11,6 +11,7 @@ Attaches a unique ID to every request. Two jobs:
 import time
 import uuid
 import logging
+from datetime import datetime, timezone
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger("app.requests")
@@ -28,9 +29,9 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         duration_ms = (time.perf_counter() - start) * 1000
         response.headers["X-Request-Id"] = request_id
 
-        logger.info(
-            "%s %s %s %.1fms request_id=%s",
-            request.method, request.url.path, response.status_code, duration_ms, request_id,
-        )
+        utc_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        log_line = f"[{utc_time} UTC] {request.method} {request.url.path} status={response.status_code} ({duration_ms:.1f}ms) request_id={request_id}"
+        logger.info(log_line)
+        print(log_line, flush=True)
 
         return response

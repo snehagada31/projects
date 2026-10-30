@@ -38,6 +38,7 @@ from app.common.errors import ValidationError, NotFoundError, AuthorizationError
 from app.common.query_validation import validate_pagination_params
 from app.common.pagination import paginate
 from app.config import settings
+from app.common.activity_logger import log_activity
 
 router = APIRouter()
 
@@ -234,6 +235,48 @@ async def create_post(
         ))
 
     item = await build_post_item(repo, new_post, viewer_id=author_id)
+
+    # Activity Logging
+    try:
+        if kind == "reply" and reply_to_id:
+            parent = await maybe_await(repo.get_post(reply_to_id))
+            parent_author = "user"
+            if parent:
+                parent_aid = parent.get("author_id") if isinstance(parent, dict) else getattr(parent, "author_id", None)
+                if parent_aid:
+                    u = await maybe_await(repo.get_user(str(parent_aid)))
+                    if u:
+                        parent_author = u.get("handle") if isinstance(u, dict) else getattr(u, "handle", "user")
+            log_activity(
+                actor=current_user.handle,
+                action="commented on",
+                target=f"@{parent_author}'s post",
+                details=f'comment="{text}", post_id={item.id}, reply_to={reply_to_id}',
+            )
+        elif kind == "repost" and repost_of_id:
+            orig = await maybe_await(repo.get_post(repost_of_id))
+            orig_author = "user"
+            if orig:
+                orig_aid = orig.get("author_id") if isinstance(orig, dict) else getattr(orig, "author_id", None)
+                if orig_aid:
+                    u = await maybe_await(repo.get_user(str(orig_aid)))
+                    if u:
+                        orig_author = u.get("handle") if isinstance(u, dict) else getattr(u, "handle", "user")
+            log_activity(
+                actor=current_user.handle,
+                action="reposted",
+                target=f"@{orig_author}'s post",
+                details=f"post_id={item.id}, repost_of={repost_of_id}",
+            )
+        else:
+            log_activity(
+                actor=current_user.handle,
+                action="published a tweet",
+                details=f'"{text}", post_id={item.id}',
+            )
+    except Exception:
+        pass
+
     return {"item": item}
 
 
@@ -315,6 +358,16 @@ async def edit_post(
 
     updated = await maybe_await(repo.update_post_text(post_id, payload.text))
     item = await build_post_item(repo, updated, viewer_id=str(current_user.id))
+
+    try:
+        log_activity(
+            actor=current_user.handle,
+            action="edited post",
+            details=f'post_id={post_id}, new_text="{payload.text}"',
+        )
+    except Exception:
+        pass
+
     return {"item": item}
 
 
@@ -325,7 +378,27 @@ async def like_post(
     repo: SocialRepository = Depends(get_social_repository),
 ):
     _validate_uuid(post_id)
-    return await set_post_like(repo, post_id, str(current_user.id))
+    res = await set_post_like(repo, post_id, str(current_user.id))
+
+    try:
+        target_post = await maybe_await(repo.get_post(post_id))
+        target_handle = "user"
+        if target_post:
+            aid = target_post.get("author_id") if isinstance(target_post, dict) else getattr(target_post, "author_id", None)
+            if aid:
+                u = await maybe_await(repo.get_user(str(aid)))
+                if u:
+                    target_handle = u.get("handle") if isinstance(u, dict) else getattr(u, "handle", "user")
+        log_activity(
+            actor=current_user.handle,
+            action="liked",
+            target=f"@{target_handle}'s post",
+            details=f"post_id={post_id}, total_likes={res.like_count}",
+        )
+    except Exception:
+        pass
+
+    return res
 
 
 @router.delete("/posts/{post_id}/like", response_model=LikeResponse)
@@ -335,7 +408,27 @@ async def unlike_post(
     repo: SocialRepository = Depends(get_social_repository),
 ):
     _validate_uuid(post_id)
-    return await remove_post_like(repo, post_id, str(current_user.id))
+    res = await remove_post_like(repo, post_id, str(current_user.id))
+
+    try:
+        target_post = await maybe_await(repo.get_post(post_id))
+        target_handle = "user"
+        if target_post:
+            aid = target_post.get("author_id") if isinstance(target_post, dict) else getattr(target_post, "author_id", None)
+            if aid:
+                u = await maybe_await(repo.get_user(str(aid)))
+                if u:
+                    target_handle = u.get("handle") if isinstance(u, dict) else getattr(u, "handle", "user")
+        log_activity(
+            actor=current_user.handle,
+            action="unliked",
+            target=f"@{target_handle}'s post",
+            details=f"post_id={post_id}, total_likes={res.like_count}",
+        )
+    except Exception:
+        pass
+
+    return res
 
 
 @router.get("/search/posts", response_model=PaginatedResponse[PostItem])
@@ -373,6 +466,23 @@ async def repost_post(
 
     await maybe_await(repo.add_repost(str(current_user.id), post_id))
     retweet_count = await maybe_await(repo.get_repost_count(post_id))
+
+    try:
+        orig_author = "user"
+        orig_aid = target.get("author_id") if isinstance(target, dict) else getattr(target, "author_id", None)
+        if orig_aid:
+            u = await maybe_await(repo.get_user(str(orig_aid)))
+            if u:
+                orig_author = u.get("handle") if isinstance(u, dict) else getattr(u, "handle", "user")
+        log_activity(
+            actor=current_user.handle,
+            action="reposted",
+            target=f"@{orig_author}'s post",
+            details=f"post_id={post_id}, total_reposts={retweet_count}",
+        )
+    except Exception:
+        pass
+
     return RepostResponse(post_id=post_id, reposted_by_viewer=True, retweet_count=retweet_count)
 
 
@@ -385,6 +495,17 @@ async def unrepost_post(
     _validate_uuid(post_id)
     await maybe_await(repo.remove_repost(str(current_user.id), post_id))
     retweet_count = await maybe_await(repo.get_repost_count(post_id))
+
+    try:
+        log_activity(
+            actor=current_user.handle,
+            action="removed repost of",
+            target=f"post {post_id}",
+            details=f"total_reposts={retweet_count}",
+        )
+    except Exception:
+        pass
+
     return RepostResponse(post_id=post_id, reposted_by_viewer=False, retweet_count=retweet_count)
 
 
@@ -406,6 +527,16 @@ async def delete_post_or_comment(
     deleted = await maybe_await(repo.delete_post(post_id))
     if not deleted:
         raise NotFoundError("post not found")
+
+    try:
+        log_activity(
+            actor=current_user.handle,
+            action="deleted post",
+            details=f"post_id={post_id}",
+        )
+    except Exception:
+        pass
+
     return {"success": True, "deletedId": post_id}
 
 
@@ -421,6 +552,16 @@ async def bookmark_post(
         raise NotFoundError("post not found")
     if hasattr(repo, "bookmark_post"):
         await repo.bookmark_post(str(current_user.id), post_id)
+
+    try:
+        log_activity(
+            actor=current_user.handle,
+            action="bookmarked",
+            target=f"post {post_id}",
+        )
+    except Exception:
+        pass
+
     return BookmarkResponse(post_id=post_id, bookmarked_by_viewer=True)
 
 
@@ -433,6 +574,16 @@ async def unbookmark_post(
     _validate_uuid(post_id)
     if hasattr(repo, "unbookmark_post"):
         await repo.unbookmark_post(str(current_user.id), post_id)
+
+    try:
+        log_activity(
+            actor=current_user.handle,
+            action="removed bookmark of",
+            target=f"post {post_id}",
+        )
+    except Exception:
+        pass
+
     return BookmarkResponse(post_id=post_id, bookmarked_by_viewer=False)
 
 

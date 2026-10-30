@@ -33,6 +33,7 @@ from app.services.auth_service import (
 )
 from app.common.security import hash_session_token
 from app.common.errors import AuthenticationError, NotFoundError, ValidationError
+from app.common.activity_logger import log_activity
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -63,7 +64,16 @@ async def login(
     req: LoginRequest,
     repo: PostgresSocialRepository = Depends(get_social_repo),
 ):
-    return await authenticate_account(repo, req)
+    res = await authenticate_account(repo, req)
+    try:
+        log_activity(
+            actor=req.handle,
+            action="logged in",
+            details=f"expires_at={res.expires_at}",
+        )
+    except Exception:
+        pass
+    return res
 
 
 @router.post(
@@ -134,6 +144,16 @@ async def revoke_session_by_id(
     revoked = await repo.revoke_session_by_id(current_user.id, sid)
     if not revoked:
         raise NotFoundError("Session not found or already revoked")
+
+    try:
+        log_activity(
+            actor=current_user.handle,
+            action="dismissed session",
+            details=f"session_id={session_id}",
+        )
+    except Exception:
+        pass
+
     return AuthMessageResponse(message="Session dismissed successfully")
 
 
@@ -151,4 +171,14 @@ async def revoke_other_sessions(
         raise AuthenticationError("Authentication credentials were not provided")
     current_hash = hash_session_token(auth.credentials)
     count = await repo.revoke_other_sessions(current_user.id, current_hash)
+
+    try:
+        log_activity(
+            actor=current_user.handle,
+            action="dismissed all other sessions",
+            details=f"count={count}",
+        )
+    except Exception:
+        pass
+
     return AuthMessageResponse(message=f"Revoked {count} other active session(s)")
