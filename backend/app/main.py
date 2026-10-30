@@ -25,10 +25,18 @@ from app.common.error_handlers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Stage C: nothing needed on startup (the engine connects lazily,
-    # on first real query) — but shutdown MUST dispose the engine,
-    # closing every pooled connection cleanly instead of leaving them
-    # dangling when the process exits.
+    # Auto-create tables and seed data if using PostgreSQL on Render/production
+    try:
+        from app.db.session import engine
+        from app.db.models import Base
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        # Idempotent seed
+        from app.db.seed import seed_database
+        await seed_database()
+    except Exception as e:
+        print("Database startup auto-migration/seed note:", e)
+
     yield
     from app.db.session import dispose_engine
     await dispose_engine()
@@ -37,15 +45,22 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(lifespan=lifespan)
 
+    allowed_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+    if settings.frontend_origin:
+        for orig in settings.frontend_origin.split(","):
+            cleaned = orig.strip().rstrip("/")
+            if cleaned and cleaned not in allowed_origins:
+                allowed_origins.append(cleaned)
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            settings.frontend_origin,
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-        ],
+        allow_origins=allowed_origins,
+        allow_origin_regex=r"https:\/\/.*\.vercel\.app",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

@@ -24,6 +24,13 @@ class Settings(BaseSettings):
             uuid.UUID(self.demo_user_id)
         except ValueError:
             raise ValueError("DEMO_USER_ID must be a valid UUID")
+
+        # Auto-convert standard Render / Cloud PostgreSQL URLs to asyncpg
+        if self.database_url.startswith("postgres://"):
+            self.database_url = self.database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif self.database_url.startswith("postgresql://"):
+            self.database_url = self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
         # Allow PostgreSQL (production) or SQLite (tests) URLs.
         if not (self.database_url.startswith("postgresql+asyncpg://") or self.database_url.startswith("sqlite+aiosqlite://")):
             raise ValueError(
