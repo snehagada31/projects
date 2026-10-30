@@ -99,6 +99,43 @@ export async function fetchMe() {
   }
 }
 
+// --- Active Session Management ---
+export async function fetchActiveSessions() {
+  const res = await fetch(`${API_BASE}/auth/sessions`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to fetch active sessions");
+  }
+  const data = await res.json();
+  return data.sessions || [];
+}
+
+export async function revokeSession(sessionId) {
+  const res = await fetch(`${API_BASE}/auth/sessions/${sessionId}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to revoke session");
+  }
+  return res.json();
+}
+
+export async function revokeOtherSessions() {
+  const res = await fetch(`${API_BASE}/auth/sessions/revoke-others`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Failed to revoke other sessions");
+  }
+  return res.json();
+}
+
 // --- Feed (Personalized when logged in, Public when guest) ---
 export async function fetchFeed(cursor, limit = 10) {
   const isRealCursor = cursor && typeof cursor === "string" && cursor !== "0";

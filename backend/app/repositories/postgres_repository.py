@@ -486,6 +486,61 @@ class PostgresSocialRepository:
         await self.session.commit()
         return True
 
+    async def get_user_active_sessions(self, user_id: uuid.UUID | str) -> list[UserSession]:
+        uid = uuid.UUID(str(user_id)) if isinstance(user_id, str) else user_id
+        stmt = (
+            select(UserSession)
+            .where(
+                and_(
+                    UserSession.user_id == uid,
+                    UserSession.revoked_at.is_(None),
+                    UserSession.expires_at > func.now(),
+                )
+            )
+            .order_by(UserSession.created_at.desc())
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
+    async def revoke_session_by_id(self, user_id: uuid.UUID | str, session_id: uuid.UUID | str) -> bool:
+        uid = uuid.UUID(str(user_id)) if isinstance(user_id, str) else user_id
+        sid = uuid.UUID(str(session_id)) if isinstance(session_id, str) else session_id
+        stmt = (
+            select(UserSession)
+            .where(
+                and_(
+                    UserSession.id == sid,
+                    UserSession.user_id == uid,
+                    UserSession.revoked_at.is_(None),
+                )
+            )
+        )
+        res = await self.session.execute(stmt)
+        sess = res.scalar_one_or_none()
+        if not sess:
+            return False
+        sess.revoked_at = func.now()
+        await self.session.commit()
+        return True
+
+    async def revoke_other_sessions(self, user_id: uuid.UUID | str, current_token_hash: str) -> int:
+        uid = uuid.UUID(str(user_id)) if isinstance(user_id, str) else user_id
+        stmt = (
+            update(UserSession)
+            .where(
+                and_(
+                    UserSession.user_id == uid,
+                    UserSession.token_hash != current_token_hash,
+                    UserSession.revoked_at.is_(None),
+                    UserSession.expires_at > func.now(),
+                )
+            )
+            .values(revoked_at=func.now())
+        )
+        res = await self.session.execute(stmt)
+        await self.session.commit()
+        return res.rowcount or 0
+
     async def update_user_profile(
         self,
         user_id: uuid.UUID | str,

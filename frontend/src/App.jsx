@@ -589,6 +589,7 @@ export default function App() {
             onRequireAuth={() => setIsAuthModalOpen(true)}
             onComment={openReplyModal}
             onImageClick={setLightboxImage}
+            onLogout={handleLogout}
           />
         )}
 

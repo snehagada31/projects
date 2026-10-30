@@ -54,3 +54,14 @@ class AuthResponse(CamelModel):
 
 class AuthMessageResponse(CamelModel):
     message: str
+
+
+class SessionItem(CamelModel):
+    id: str
+    created_at: str
+    expires_at: str
+    is_current: bool
+
+
+class SessionsResponse(CamelModel):
+    sessions: list[SessionItem]
