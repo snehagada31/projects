@@ -32,21 +32,12 @@ export default function Sidebar({
                 if (onSelectTab) onSelectTab(item.id);
               }}
               style={{ position: "relative" }}
+              title={item.label}
             >
-              <span>{item.icon}</span>
-              <span>{item.label}</span>
+              <span className="sidebar__nav-icon">{item.icon}</span>
+              <span className="sidebar__nav-label">{item.label}</span>
               {item.badge > 0 && (
-                <span
-                  style={{
-                    backgroundColor: "#1d9bf0",
-                    color: "white",
-                    fontSize: "12px",
-                    fontWeight: "bold",
-                    borderRadius: "999px",
-                    padding: "2px 8px",
-                    marginLeft: "auto",
-                  }}
-                >
+                <span className="sidebar__badge">
                   {item.badge}
                 </span>
               )}

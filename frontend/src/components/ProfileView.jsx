@@ -7,6 +7,7 @@ import {
   fetchActiveSessions,
   revokeSession,
   revokeOtherSessions,
+  deactivateAccount,
 } from "../api.js";
 import Tweet from "./Tweet.jsx";
 import {
@@ -56,6 +57,7 @@ export default function ProfileView({
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [revokingSessionId, setRevokingSessionId] = useState(null);
   const [revokingOthers, setRevokingOthers] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -209,6 +211,29 @@ export default function ProfileView({
       setProfile((prev) => prev ? { ...prev, postCount: Math.max(0, (prev.postCount || 1) - 1) } : prev);
     } catch (err) {
       alert("Failed to delete post: " + err.message);
+    }
+  }
+
+  async function handleDeactivate() {
+    const confirmed = window.confirm(
+      "Are you sure you want to deactivate your account?\n\nYour profile will be hidden, all your login sessions will be dismissed, and you will be signed out immediately."
+    );
+    if (!confirmed) return;
+
+    setDeactivating(true);
+    try {
+      await deactivateAccount();
+      alert("Your account has been successfully deactivated.");
+      if (onLogout) {
+        onLogout();
+      } else {
+        localStorage.removeItem("social_auth_token");
+        window.location.reload();
+      }
+    } catch (err) {
+      alert("Failed to deactivate account: " + err.message);
+    } finally {
+      setDeactivating(false);
     }
   }
 
@@ -385,6 +410,43 @@ export default function ProfileView({
           >
             {saving ? "Saving..." : "Save Profile"}
           </button>
+
+          <div
+            style={{
+              marginTop: "16px",
+              paddingTop: "16px",
+              borderTop: "1px solid #2f3336",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "8px",
+            }}
+          >
+            <div>
+              <div style={{ color: "#f4212e", fontWeight: "600", fontSize: "14px" }}>Deactivate Account</div>
+              <div style={{ color: "#71767b", fontSize: "12px" }}>Disable your profile and log out of all devices.</div>
+            </div>
+            <button
+              type="button"
+              onClick={handleDeactivate}
+              disabled={deactivating}
+              style={{
+                background: "transparent",
+                border: "1px solid #f4212e",
+                color: "#f4212e",
+                borderRadius: "999px",
+                padding: "6px 14px",
+                fontWeight: "600",
+                fontSize: "13px",
+                cursor: deactivating ? "not-allowed" : "pointer",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(244, 33, 46, 0.1)")}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+            >
+              {deactivating ? "Deactivating..." : "Deactivate Account"}
+            </button>
+          </div>
         </form>
       ) : (
         <div style={{ marginBottom: "20px" }}>
@@ -693,6 +755,44 @@ export default function ProfileView({
                 })}
               </div>
             )}
+
+            {/* Account Danger Zone: Deactivate */}
+            <div
+              style={{
+                marginTop: "24px",
+                paddingTop: "16px",
+                borderTop: "1px solid #2f3336",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "8px",
+              }}
+            >
+              <div>
+                <div style={{ color: "#f4212e", fontWeight: "600", fontSize: "14px" }}>Deactivate Account</div>
+                <div style={{ color: "#71767b", fontSize: "12px" }}>Disable your profile and revoke all sessions.</div>
+              </div>
+              <button
+                type="button"
+                onClick={handleDeactivate}
+                disabled={deactivating}
+                style={{
+                  background: "rgba(244, 33, 46, 0.1)",
+                  border: "1px solid #f4212e",
+                  color: "#f4212e",
+                  borderRadius: "999px",
+                  padding: "6px 14px",
+                  fontWeight: "600",
+                  cursor: deactivating ? "not-allowed" : "pointer",
+                  fontSize: "13px",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(244, 33, 46, 0.2)")}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "rgba(244, 33, 46, 0.1)")}
+              >
+                {deactivating ? "Deactivating..." : "Deactivate Account"}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -440,6 +440,18 @@ export async function updateMyProfile(profileData) {
   return res.json();
 }
 
+export async function deactivateAccount() {
+  const res = await fetch(`${API_BASE}/users/me/deactivate`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || err?.detail || "Failed to deactivate account");
+  }
+  return res.json();
+}
+
 // --- Follow / Unfollow ---
 export async function followUser(userId) {
   const res = await fetch(`${API_BASE}/users/${userId}/follow`, {
