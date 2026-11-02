@@ -45,12 +45,13 @@ export default function ProfileView({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  // Sub-tab: "posts" | "replies" | "sessions"
+  // Sub-tab: "posts" | "replies"
   const [activeSubTab, setActiveSubTab] = useState("posts");
   const [userPosts, setUserPosts] = useState([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
 
-  // Active Sessions
+  // Active Sessions Modal (corner ☰ button)
+  const [showSessionsModal, setShowSessionsModal] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [revokingSessionId, setRevokingSessionId] = useState(null);
@@ -63,12 +64,27 @@ export default function ProfileView({
 
   useEffect(() => {
     if (!currentUser?.id) return;
-    if (activeSubTab === "sessions") {
-      loadSessions();
-    } else {
-      loadUserPosts();
-    }
+    loadUserPosts();
   }, [currentUser?.id, activeSubTab]);
+
+  useEffect(() => {
+    if (!currentUser?.id || !showSessionsModal) return;
+    loadSessions();
+  }, [currentUser?.id, showSessionsModal]);
+
+  async function loadUserPosts() {
+    setLoadingPosts(true);
+    try {
+      const kind = activeSubTab === "replies" ? "reply" : "original";
+      const posts = await fetchUserPosts(currentUser.id, kind);
+      const archivedIds = new Set(getArchivedPostIds(currentUser.id));
+      setUserPosts(posts.filter((p) => !archivedIds.has(p.id)));
+    } catch (err) {
+      console.error("Failed to load user posts:", err);
+    } finally {
+      setLoadingPosts(false);
+    }
+  }
 
   async function loadSessions() {
     setLoadingSessions(true);
@@ -254,7 +270,30 @@ export default function ProfileView({
             background: "#000",
           }}
         />
-        <div style={{ position: "absolute", bottom: "-40px", right: "20px" }}>
+        <div style={{ position: "absolute", bottom: "-40px", right: "20px", display: "flex", gap: "10px", alignItems: "center" }}>
+          <button
+            onClick={() => setShowSessionsModal(true)}
+            title="Active Login Sessions (Manage Devices)"
+            style={{
+              background: "#16181c",
+              border: "1px solid #536471",
+              color: "#e7e9ea",
+              fontWeight: "600",
+              borderRadius: "999px",
+              padding: "8px 14px",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              fontSize: "13px",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#1d9bf0")}
+            onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#536471")}
+          >
+            <span style={{ fontSize: "16px", lineHeight: 1 }}>☰</span>
+            <span>Sessions</span>
+          </button>
+
           {!editing ? (
             <button
               onClick={() => setEditing(true)}
@@ -369,7 +408,7 @@ export default function ProfileView({
         </div>
       )}
 
-      {/* Sub-tabs: Posts / Replies */}
+      {/* Sub-tabs: Posts / Replies / Reposts */}
       <div style={{ display: "flex", borderBottom: "1px solid #2f3336", marginTop: "24px", marginBottom: "8px" }}>
         <button
           onClick={() => setActiveSubTab("posts")}
@@ -403,212 +442,258 @@ export default function ProfileView({
         >
           Replies
         </button>
-        <button
-          onClick={() => setActiveSubTab("sessions")}
-          style={{
-            flex: 1,
-            background: "transparent",
-            border: "none",
-            borderBottom: activeSubTab === "sessions" ? "4px solid #1d9bf0" : "4px solid transparent",
-            color: activeSubTab === "sessions" ? "#fff" : "#71767b",
-            fontWeight: "bold",
-            padding: "12px",
-            cursor: "pointer",
-            fontSize: "15px",
-          }}
-        >
-          🔐 Active Sessions
-        </button>
       </div>
 
-      {activeSubTab === "sessions" ? (
-        <div style={{ padding: "16px 8px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
-            <div>
-              <h3 style={{ margin: "0 0 4px 0", fontSize: "18px", color: "#e7e9ea" }}>Active Login Sessions</h3>
-              <p style={{ margin: 0, fontSize: "13px", color: "#71767b" }}>
-                Devices and browsers currently authenticated. You can dismiss any session you do not recognize.
-              </p>
+      {/* User Posts / Replies List */}
+      <div>
+        {loadingPosts ? (
+          <p style={{ textAlign: "center", color: "#71767b", padding: "20px" }}>Loading {activeSubTab}...</p>
+        ) : (userPosts.filter((p) => !new Set(getArchivedPostIds(currentUser?.id)).has(p.id))).length === 0 ? (
+          <div style={{ textAlign: "center", color: "#71767b", padding: "40px 20px" }}>
+            <p style={{ fontSize: "16px", fontWeight: "bold", color: "#e7e9ea" }}>
+              {activeSubTab === "posts" ? "No posts yet" : "No replies yet"}
+            </p>
+            <p style={{ fontSize: "14px", marginTop: "4px" }}>
+              {activeSubTab === "posts"
+                ? "When you publish tweets, they will appear here on your profile."
+                : "Replies and comments you post will appear here."}
+            </p>
+          </div>
+        ) : (
+          userPosts
+            .filter((p) => !new Set(getArchivedPostIds(currentUser?.id)).has(p.id))
+            .map((post) => (
+            <div key={post.id} style={{ borderBottom: "1px solid #2f3336" }}>
+              {activeSubTab === "replies" && (
+                <div style={{ padding: "8px 16px 0 16px", fontSize: "13px", color: "#71767b", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span>💬</span>
+                  <span>
+                    <strong style={{ color: "#e7e9ea" }}>{currentUser.displayName}</strong> replied to{" "}
+                    <span style={{ color: "#1d9bf0", fontWeight: "bold" }}>
+                      {post.replyToName && post.replyToHandle
+                        ? `${post.replyToName} (@${post.replyToHandle.replace("@", "")})`
+                        : post.replyToHandle
+                        ? `@${post.replyToHandle.replace("@", "")}`
+                        : post.reply_to_handle
+                        ? `@${post.reply_to_handle.replace("@", "")}`
+                        : (post.replyToName || "a post")}
+                    </span>
+                  </span>
+                </div>
+              )}
+              <Tweet
+                id={post.id}
+                authorId={post.authorId}
+                author={post.author}
+                handle={post.handle}
+                authorAvatar={post.authorAvatar}
+                text={post.text}
+                image={post.image}
+                time={post.created_at}
+                initialLikes={post.like_count}
+                initialComments={post.comment_count}
+                initialRetweets={post.retweet_count}
+                initialLiked={post.liked_by_viewer}
+                initialRetweeted={post.reposted_by_viewer}
+                initialBookmarked={post.bookmarked_by_viewer}
+                replyToHandle={post.replyToHandle || post.reply_to_handle}
+                replyToName={post.replyToName || post.reply_to_name}
+                isReply={activeSubTab === "replies"}
+                canDelete={true}
+                onDelete={() => handleDeletePost(post.id)}
+                onComment={onComment ? () => onComment(post) : null}
+                onImageClick={onImageClick}
+                currentUser={currentUser}
+                onRequireAuth={onRequireAuth}
+                onArchive={handleArchivePost}
+              />
             </div>
-            {sessions.filter((s) => !(s.is_current || s.isCurrent)).length > 0 && (
+          ))
+        )}
+      </div>
+
+      {/* ========================================================= */}
+      {/* CORNER ACTIVE SESSIONS MODAL (Opened via top ☰ button)     */}
+      {/* ========================================================= */}
+      {showSessionsModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0, 0, 0, 0.75)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "20px",
+          }}
+          onClick={() => setShowSessionsModal(false)}
+        >
+          <div
+            style={{
+              background: "#000",
+              border: "1px solid #2f3336",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "560px",
+              maxHeight: "85vh",
+              overflowY: "auto",
+              padding: "24px",
+              position: "relative",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "20px" }}>☰</span>
+                <h2 style={{ margin: 0, fontSize: "20px", color: "#e7e9ea" }}>Active Login Sessions</h2>
+              </div>
               <button
-                onClick={handleRevokeOtherSessions}
-                disabled={revokingOthers}
+                onClick={() => setShowSessionsModal(false)}
                 style={{
-                  background: "#f4212e",
-                  color: "#fff",
+                  background: "transparent",
                   border: "none",
-                  borderRadius: "9999px",
-                  padding: "8px 16px",
-                  fontWeight: "bold",
-                  fontSize: "13px",
-                  cursor: revokingOthers ? "not-allowed" : "pointer",
+                  color: "#71767b",
+                  fontSize: "20px",
+                  cursor: "pointer",
+                  borderRadius: "50%",
+                  width: "32px",
+                  height: "32px",
                 }}
               >
-                {revokingOthers ? "Dismissing..." : "Dismiss All Other Sessions"}
+                ✕
               </button>
-            )}
-          </div>
-
-          {loadingSessions ? (
-            <p style={{ textAlign: "center", color: "#71767b", padding: "20px" }}>Loading active sessions...</p>
-          ) : sessions.length === 0 ? (
-            <div style={{ textAlign: "center", color: "#71767b", padding: "40px 20px" }}>
-              <p>No active sessions found.</p>
             </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              {sessions.map((sess) => {
-                const isCurrent = Boolean(sess.is_current || sess.isCurrent);
-                return (
-                  <div
-                    key={sess.id}
-                    style={{
-                      background: "#16181c",
-                      border: isCurrent ? "1px solid #1d9bf0" : "1px solid #2f3336",
-                      borderRadius: "12px",
-                      padding: "16px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "12px",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                      <div
-                        style={{
-                          width: "42px",
-                          height: "42px",
-                          borderRadius: "50%",
-                          background: isCurrent ? "rgba(29, 155, 240, 0.15)" : "#222",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: "20px",
-                        }}
-                      >
-                        {isCurrent ? "💻" : "📱"}
-                      </div>
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                          <span style={{ fontWeight: "bold", color: "#e7e9ea", fontSize: "15px" }}>
-                            {isCurrent ? "This Device (Current Session)" : "Other Logged-in Device"}
-                          </span>
-                          {isCurrent && (
-                            <span
-                              style={{
-                                background: "#00ba7c",
-                                color: "#000",
-                                fontSize: "11px",
-                                fontWeight: "bold",
-                                padding: "2px 8px",
-                                borderRadius: "999px",
-                              }}
-                            >
-                              ACTIVE NOW
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: "13px", color: "#71767b", marginTop: "4px" }}>
-                          Signed in: <span style={{ color: "#d9d9d9" }}>{formatSessionDate(sess.created_at || sess.createdAt)}</span>
-                        </div>
-                        <div style={{ fontSize: "12px", color: "#536471", marginTop: "2px" }}>
-                          Expires: {formatSessionDate(sess.expires_at || sess.expiresAt)} · Session: {sess.id.slice(0, 8)}...
-                        </div>
-                      </div>
-                    </div>
 
-                    <button
-                      onClick={() => handleRevokeSession(sess.id, isCurrent)}
-                      disabled={revokingSessionId === sess.id}
+            <p style={{ margin: "0 0 16px 0", fontSize: "13px", color: "#71767b", lineHeight: "1.4" }}>
+              These devices and browsers currently have active access to your account. You can dismiss any session you do not recognize, or dismiss all other devices at once.
+            </p>
+
+            {sessions.filter((s) => !(s.is_current || s.isCurrent)).length > 0 && (
+              <div style={{ marginBottom: "16px" }}>
+                <button
+                  onClick={handleRevokeOtherSessions}
+                  disabled={revokingOthers}
+                  style={{
+                    background: "#f4212e",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "9999px",
+                    padding: "8px 16px",
+                    fontWeight: "bold",
+                    fontSize: "13px",
+                    cursor: revokingOthers ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {revokingOthers ? "Dismissing..." : "Dismiss All Other Sessions"}
+                </button>
+              </div>
+            )}
+
+            {loadingSessions ? (
+              <p style={{ textAlign: "center", color: "#71767b", padding: "20px" }}>Loading active sessions...</p>
+            ) : sessions.length === 0 ? (
+              <div style={{ textAlign: "center", color: "#71767b", padding: "30px 20px" }}>
+                <p>No active sessions found.</p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                {sessions.map((sess) => {
+                  const isCurrent = Boolean(sess.is_current || sess.isCurrent);
+                  return (
+                    <div
+                      key={sess.id}
                       style={{
-                        background: "transparent",
-                        border: "1px solid #f4212e",
-                        color: "#f4212e",
-                        borderRadius: "9999px",
-                        padding: "6px 14px",
-                        fontSize: "13px",
-                        fontWeight: "bold",
-                        cursor: revokingSessionId === sess.id ? "not-allowed" : "pointer",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = "rgba(244, 33, 46, 0.1)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = "transparent";
+                        background: "#16181c",
+                        border: isCurrent ? "1px solid #1d9bf0" : "1px solid #2f3336",
+                        borderRadius: "12px",
+                        padding: "16px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "12px",
+                        flexWrap: "wrap",
                       }}
                     >
-                      {revokingSessionId === sess.id
-                        ? "Dismissing..."
-                        : isCurrent
-                        ? "Dismiss & Log Out"
-                        : "Dismiss / Revoke"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : (
-        /* User Posts List */
-        <div>
-          {loadingPosts ? (
-            <p style={{ textAlign: "center", color: "#71767b", padding: "20px" }}>Loading {activeSubTab}...</p>
-          ) : userPosts.length === 0 ? (
-            <div style={{ textAlign: "center", color: "#71767b", padding: "40px 20px" }}>
-              <p style={{ fontSize: "16px", fontWeight: "bold", color: "#e7e9ea" }}>
-                {activeSubTab === "posts" ? "No posts yet" : "No replies yet"}
-              </p>
-              <p style={{ fontSize: "14px", marginTop: "4px" }}>
-                {activeSubTab === "posts"
-                  ? "When you publish tweets, they will appear here on your profile."
-                  : "Replies and comments you post will appear here."}
-              </p>
-            </div>
-          ) : (
-            userPosts.map((post) => (
-              <div key={post.id} style={{ borderBottom: "1px solid #2f3336" }}>
-                {activeSubTab === "replies" && (
-                  <div style={{ padding: "8px 16px 0 16px", fontSize: "13px", color: "#71767b", display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span>💬</span>
-                    <span>
-                      <strong style={{ color: "#e7e9ea" }}>{currentUser.displayName}</strong> replied to{" "}
-                      <span style={{ color: "#1d9bf0", fontWeight: "bold" }}>
-                        @{post.reply_to_handle ? post.reply_to_handle.replace("@", "") : "user"}
-                      </span>
-                    </span>
-                  </div>
-                )}
-                <Tweet
-                  id={post.id}
-                  authorId={post.authorId}
-                  author={post.author}
-                  handle={post.handle}
-                  authorAvatar={post.authorAvatar}
-                  text={post.text}
-                  image={post.image}
-                  time={post.created_at}
-                  initialLikes={post.like_count}
-                  initialComments={post.comment_count}
-                  initialRetweets={post.retweet_count}
-                  initialLiked={post.liked_by_viewer}
-                  initialRetweeted={post.reposted_by_viewer}
-                  initialBookmarked={post.bookmarked_by_viewer}
-                  replyToHandle={post.reply_to_handle}
-                  isReply={activeSubTab === "replies"}
-                  canDelete={true}
-                  onDelete={() => handleDeletePost(post.id)}
-                  onComment={onComment ? () => onComment(post) : null}
-                  onImageClick={onImageClick}
-                  currentUser={currentUser}
-                  onRequireAuth={onRequireAuth}
-                  onArchive={handleArchivePost}
-                />
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div
+                          style={{
+                            width: "42px",
+                            height: "42px",
+                            borderRadius: "50%",
+                            background: isCurrent ? "rgba(29, 155, 240, 0.15)" : "#222",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "20px",
+                          }}
+                        >
+                          {isCurrent ? "💻" : "📱"}
+                        </div>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                            <span style={{ fontWeight: "bold", color: "#e7e9ea", fontSize: "15px" }}>
+                              {isCurrent ? "This Device (Current Session)" : "Other Logged-in Device"}
+                            </span>
+                            {isCurrent && (
+                              <span
+                                style={{
+                                  background: "#00ba7c",
+                                  color: "#000",
+                                  fontSize: "11px",
+                                  fontWeight: "bold",
+                                  padding: "2px 8px",
+                                  borderRadius: "999px",
+                                }}
+                              >
+                                ACTIVE NOW
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: "13px", color: "#71767b", marginTop: "4px" }}>
+                            Signed in: <span style={{ color: "#d9d9d9" }}>{formatSessionDate(sess.created_at || sess.createdAt)}</span>
+                          </div>
+                          <div style={{ fontSize: "12px", color: "#536471", marginTop: "2px" }}>
+                            Expires: {formatSessionDate(sess.expires_at || sess.expiresAt)} · Session: {sess.id.slice(0, 8)}...
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleRevokeSession(sess.id, isCurrent)}
+                        disabled={revokingSessionId === sess.id}
+                        style={{
+                          background: "transparent",
+                          border: "1px solid #f4212e",
+                          color: "#f4212e",
+                          borderRadius: "9999px",
+                          padding: "6px 14px",
+                          fontSize: "13px",
+                          fontWeight: "bold",
+                          cursor: revokingSessionId === sess.id ? "not-allowed" : "pointer",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = "rgba(244, 33, 46, 0.1)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = "transparent";
+                        }}
+                      >
+                        {revokingSessionId === sess.id
+                          ? "Dismissing..."
+                          : isCurrent
+                          ? "Dismiss & Log Out"
+                          : "Dismiss / Revoke"}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-            ))
-          )}
+            )}
+          </div>
         </div>
       )}
     </div>

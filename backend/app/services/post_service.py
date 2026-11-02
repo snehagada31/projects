@@ -4,7 +4,7 @@ Supports both async (Postgres) and sync (Fixture) repositories transparently.
 """
 import inspect
 from typing import Any
-from app.schemas.post import PostItem, MediaItem
+from app.schemas.post import PostItem, MediaItem, ReferencedPost
 from app.schemas.user import AuthorSummary, Avatar
 from app.common.errors import ValidationError, NotFoundError, ConflictError
 
@@ -85,6 +85,7 @@ async def build_post_item(repo, post: dict | Any, viewer_id: str | None = None) 
     repost_of_id = post.get("repost_of_id") if isinstance(post, dict) else getattr(post, "repost_of_id", None)
 
     reply_to_handle = None
+    reply_to_name = None
     if reply_to_id:
         try:
             parent_post = await maybe_await(repo.get_post(str(reply_to_id)))
@@ -96,6 +97,73 @@ async def build_post_item(repo, post: dict | Any, viewer_id: str | None = None) 
                         parent_author = await maybe_await(repo.get_user(str(parent_aid)))
                 if parent_author:
                     reply_to_handle = parent_author.get("handle") if isinstance(parent_author, dict) else getattr(parent_author, "handle", None)
+                    reply_to_name = parent_author.get("display_name") if isinstance(parent_author, dict) else getattr(parent_author, "display_name", None)
+        except Exception:
+            pass
+
+    referenced_post = None
+    if repost_of_id:
+        try:
+            ref_raw = await maybe_await(repo.get_post(str(repost_of_id)))
+            if ref_raw:
+                ref_author_raw = ref_raw.get("author") if isinstance(ref_raw, dict) else getattr(ref_raw, "author", None)
+                if not ref_author_raw:
+                    ref_aid = ref_raw.get("author_id") if isinstance(ref_raw, dict) else getattr(ref_raw, "author_id", None)
+                    if ref_aid:
+                        ref_author_raw = await maybe_await(repo.get_user(str(ref_aid)))
+                if isinstance(ref_author_raw, dict):
+                    ref_author_summary = AuthorSummary(
+                        id=str(ref_author_raw.get("id", "")),
+                        handle=ref_author_raw.get("handle", ""),
+                        display_name=ref_author_raw.get("display_name", ""),
+                        avatar=Avatar(
+                            small_url=(ref_author_raw.get("avatar") or {}).get("small_url", "") or ref_author_raw.get("avatar_small_url", ""),
+                            large_url=(ref_author_raw.get("avatar") or {}).get("large_url", "") or ref_author_raw.get("avatar_large_url", ""),
+                        ),
+                    )
+                elif ref_author_raw is not None:
+                    ref_author_summary = AuthorSummary(
+                        id=str(ref_author_raw.id),
+                        handle=ref_author_raw.handle,
+                        display_name=ref_author_raw.display_name,
+                        avatar=Avatar(small_url=ref_author_raw.avatar_small_url, large_url=ref_author_raw.avatar_large_url),
+                    )
+                else:
+                    ref_author_summary = AuthorSummary(id="", handle="unknown", display_name="Unknown", avatar=Avatar(small_url="", large_url=""))
+
+                ref_text = ref_raw.get("text") if isinstance(ref_raw, dict) else getattr(ref_raw, "text", None)
+                ref_id_str = str(ref_raw["id"] if isinstance(ref_raw, dict) else ref_raw.id)
+
+                ref_raw_media = (await maybe_await(repo.get_media_for_post(ref_id_str))) if hasattr(repo, "get_media_for_post") else []
+                ref_media_items = [
+                    MediaItem(
+                        id=str(m["id"] if isinstance(m, dict) else m.id),
+                        alt_text=m["alt_text"] if isinstance(m, dict) else m.alt_text,
+                        width=m["width"] if isinstance(m, dict) else m.width,
+                        height=m["height"] if isinstance(m, dict) else m.height,
+                        position=m["position"] if isinstance(m, dict) else m.position,
+                        small_url=m["small_url"] if isinstance(m, dict) else m.small_url,
+                        large_url=m["large_url"] if isinstance(m, dict) else m.large_url,
+                    )
+                    for m in ref_raw_media
+                ]
+
+                ref_like_count = (await maybe_await(repo.get_like_count(ref_id_str))) if hasattr(repo, "get_like_count") else 0
+                ref_reply_count = (await maybe_await(repo.get_reply_count(ref_id_str))) if hasattr(repo, "get_reply_count") else 0
+                ref_retweet_count = (await maybe_await(repo.get_repost_count(ref_id_str))) if hasattr(repo, "get_repost_count") else 0
+                ref_created = ref_raw.get("created_at") if isinstance(ref_raw, dict) else getattr(ref_raw, "created_at", None)
+                ref_created_str = ref_created.isoformat() if hasattr(ref_created, "isoformat") else str(ref_created or "")
+
+                referenced_post = ReferencedPost(
+                    id=ref_id_str,
+                    text=ref_text,
+                    author=ref_author_summary,
+                    media=ref_media_items,
+                    created_at=ref_created_str,
+                    like_count=ref_like_count,
+                    reply_count=ref_reply_count,
+                    retweet_count=ref_retweet_count,
+                )
         except Exception:
             pass
 
@@ -122,7 +190,9 @@ async def build_post_item(repo, post: dict | Any, viewer_id: str | None = None) 
         retweet_count=retweet_count,
         reply_to_id=str(reply_to_id) if reply_to_id else None,
         reply_to_handle=reply_to_handle,
+        reply_to_name=reply_to_name,
         repost_of_id=str(repost_of_id) if repost_of_id else None,
+        referenced_post=referenced_post,
     )
 
 

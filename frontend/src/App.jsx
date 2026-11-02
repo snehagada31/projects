@@ -87,13 +87,14 @@ export default function App() {
   }, [cursor, loading, hasMore, currentUser?.id]);
 
   // Refresh feed from beginning (e.g., when logging in, switching account, or following someone)
-  const refreshFeed = useCallback(async () => {
+  const refreshFeed = useCallback(async (explicitUserId) => {
     setLoading(true);
     setError(null);
     setCursor(null);
     try {
       const data = await fetchFeed(null, 10);
-      const archivedIds = new Set(getArchivedPostIds(currentUser?.id));
+      const uid = explicitUserId !== undefined ? explicitUserId : currentUser?.id;
+      const archivedIds = new Set(getArchivedPostIds(uid));
       setLoadedPosts((data.posts || []).filter((p) => !archivedIds.has(p.id)));
       setHasMore(data.has_more);
       setCursor(data.next_cursor ?? null);
@@ -132,9 +133,11 @@ export default function App() {
   // On mount: check auth session, fetch initial feed, and fetch notifications count once
   useEffect(() => {
     async function init() {
+      let loggedId = null;
       try {
         const me = await fetchMe();
         if (me) {
+          loggedId = me.id;
           setCurrentUser(me);
           try {
             const count = await fetchUnreadCount();
@@ -144,7 +147,7 @@ export default function App() {
       } catch (e) {
         console.error("fetchMe error on init:", e);
       }
-      refreshFeed();
+      refreshFeed(loggedId);
     }
     init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -467,7 +470,11 @@ export default function App() {
     refreshFeed();
   }
 
-  const visiblePosts = searchQuery.trim() && searchResults !== null ? searchResults : loadedPosts;
+  const archivedIds = new Set(getArchivedPostIds(currentUser?.id));
+  const activePosts = loadedPosts.filter((p) => !archivedIds.has(p.id));
+  const visiblePosts = searchQuery.trim() && searchResults !== null
+    ? searchResults.filter((p) => !archivedIds.has(p.id))
+    : activePosts;
 
   return (
     <div className="app-layout">
@@ -701,7 +708,8 @@ export default function App() {
                     initialLiked={post.liked_by_viewer}
                     initialRetweeted={post.reposted_by_viewer}
                     initialBookmarked={post.bookmarked_by_viewer}
-                    replyToHandle={post.reply_to_handle}
+                    replyToHandle={post.replyToHandle || post.reply_to_handle}
+                    replyToName={post.replyToName || post.reply_to_name}
                     currentUser={currentUser}
                     onRequireAuth={() => setIsAuthModalOpen(true)}
                     onArchive={handleArchiveFromFeed}
@@ -1069,7 +1077,8 @@ export default function App() {
                       initialLiked={post.liked_by_viewer}
                       initialRetweeted={post.reposted_by_viewer}
                       initialBookmarked={post.bookmarked_by_viewer}
-                      replyToHandle={post.reply_to_handle}
+                      replyToHandle={post.replyToHandle || post.reply_to_handle}
+                      replyToName={post.replyToName || post.reply_to_name}
                       currentUser={currentUser}
                       onRequireAuth={() => setIsAuthModalOpen(true)}
                       onArchive={handleArchiveFromFeed}

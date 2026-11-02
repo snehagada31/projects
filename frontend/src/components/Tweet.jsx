@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { likePost, unlikePost, repostPost, unrepostPost, bookmarkPost, unbookmarkPost, editPost } from "../api.js";
 
 function formatTweetTime(isoString) {
@@ -31,6 +31,7 @@ export default function Tweet({
   onImageClick,
   isReply = false,
   replyToHandle = null,
+  replyToName = null,
   showActions = true,
   currentUser = null,
   onRequireAuth = null,
@@ -42,6 +43,21 @@ export default function Tweet({
   const [likeCount, setLikeCount] = useState(initialLikes);
   const [retweetCount, setRetweetCount] = useState(initialRetweets);
   const [toastMessage, setToastMessage] = useState(null);
+
+  // Three-dots menu state
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    function handleClickOutside(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setShowMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showMenu]);
 
   // Edit states
   const [isEditing, setIsEditing] = useState(false);
@@ -57,6 +73,13 @@ export default function Tweet({
       (cleanPostHandle && cleanUserHandle && cleanPostHandle === cleanUserHandle)
     )
   );
+
+  // ARCHIVE & EDIT & DELETE PERMISSIONS:
+  // You can ONLY archive and edit your OWN tweets!
+  const canArchive = Boolean(onArchive && isOwnPost);
+  const canEdit = Boolean(isOwnPost);
+  const canDeleteOption = Boolean(onDelete && (isOwnPost || canDelete));
+  const showMenuButton = canEdit || canArchive || canDeleteOption;
 
   // Time window: allow editing only within 15 minutes of creation
   const isWithinEditWindow = time ? (Date.now() - new Date(time).getTime()) <= 15 * 60 * 1000 : true;
@@ -237,98 +260,199 @@ export default function Tweet({
           </div>
         </div>
 
-        {(canDelete || isOwnPost) && (
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            {isWithinEditWindow ? (
-              <button
-                onClick={() => setIsEditing(!isEditing)}
-                title="Edit post (within 15m)"
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "#1d9bf0",
-                  cursor: "pointer",
-                  padding: "4px 6px",
-                  fontSize: "13px",
-                  borderRadius: "4px",
-                }}
-              >
-                ✏️ Edit
-              </button>
-            ) : (
-              <span
-                title="Edit window expired (over 15 minutes since posting)"
-                style={{ color: "#536471", fontSize: "12px", cursor: "help" }}
-              >
-                ⏳ Locked
-              </span>
-            )}
+        {showMenuButton && (
+          <div style={{ position: "relative" }} ref={menuRef}>
+            <button
+              onClick={() => setShowMenu((prev) => !prev)}
+              title="More options"
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "#71767b",
+                cursor: "pointer",
+                fontSize: "18px",
+                fontWeight: "bold",
+                padding: "2px 8px",
+                borderRadius: "50%",
+                lineHeight: 1,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "#1d9bf0";
+                e.currentTarget.style.backgroundColor = "rgba(29, 155, 240, 0.1)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "#71767b";
+                e.currentTarget.style.backgroundColor = "transparent";
+              }}
+            >
+              ⋮
+            </button>
 
-            {onArchive && (
-              <button
-                onClick={() => {
-                  if (window.confirm("Archive this post? Only you will be able to see it in your private Archive.")) {
-                    onArchive({
-                      id,
-                      authorId,
-                      author,
-                      handle,
-                      authorAvatar,
-                      text: currentText,
-                      image,
-                      created_at: time,
-                      like_count: likeCount,
-                      comment_count: initialComments,
-                      retweet_count: retweetCount,
-                      liked_by_viewer: liked,
-                      reposted_by_viewer: retweeted,
-                      bookmarked_by_viewer: bookmarked,
-                    });
-                  }
-                }}
-                title="Archive post at any time (moves to your private Archive)"
+            {showMenu && (
+              <div
                 style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "#71767b",
-                  cursor: "pointer",
-                  padding: "4px 6px",
-                  fontSize: "13px",
-                  borderRadius: "4px",
+                  position: "absolute",
+                  right: 0,
+                  top: "26px",
+                  background: "#16181c",
+                  border: "1px solid #2f3336",
+                  borderRadius: "12px",
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
+                  zIndex: 100,
+                  minWidth: "190px",
+                  overflow: "hidden",
+                  padding: "6px 0",
                 }}
-                onMouseEnter={(e) => (e.target.style.color = "#eff3f4")}
-                onMouseLeave={(e) => (e.target.style.color = "#71767b")}
               >
-                📦 Archive
-              </button>
-            )}
+                {/* Edit Option: ONLY for owner within 15 min */}
+                {canEdit && (
+                  isWithinEditWindow ? (
+                    <button
+                      onClick={() => {
+                        setShowMenu(false);
+                        setIsEditing(true);
+                      }}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        background: "transparent",
+                        border: "none",
+                        color: "#e7e9ea",
+                        padding: "10px 16px",
+                        fontSize: "14px",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1d1f23")}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                    >
+                      <span>✏️</span> <span>Edit Tweet</span>
+                    </button>
+                  ) : (
+                    <div
+                      title="Edit window expired (over 15 minutes since posting)"
+                      style={{
+                        width: "100%",
+                        color: "#71767b",
+                        padding: "10px 16px",
+                        fontSize: "13px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        cursor: "not-allowed",
+                      }}
+                    >
+                      <span>⏳</span> <span>Edit Locked (15m expired)</span>
+                    </div>
+                  )
+                )}
 
-            {onDelete && (
-              <button
-                onClick={onDelete}
-                title="Delete Post"
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "#71767b",
-                  cursor: "pointer",
-                  padding: "4px 6px",
-                  fontSize: "13px",
-                  borderRadius: "4px",
-                }}
-                onMouseEnter={(e) => (e.target.style.color = "#f4212e")}
-                onMouseLeave={(e) => (e.target.style.color = "#71767b")}
-              >
-                🗑️ Delete
-              </button>
+                {/* Archive Option: ONLY for user's own post, NEVER someone else's post! */}
+                {canArchive && (
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      if (window.confirm("Archive this post? Only you will be able to see it in your private Archive.")) {
+                        onArchive({
+                          id,
+                          authorId,
+                          author,
+                          handle,
+                          authorAvatar,
+                          text: currentText,
+                          image,
+                          created_at: time,
+                          like_count: likeCount,
+                          comment_count: initialComments,
+                          retweet_count: retweetCount,
+                          liked_by_viewer: liked,
+                          reposted_by_viewer: retweeted,
+                          bookmarked_by_viewer: bookmarked,
+                        });
+                      }
+                    }}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      background: "transparent",
+                      border: "none",
+                      color: "#e7e9ea",
+                      padding: "10px 16px",
+                      fontSize: "14px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1d1f23")}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                  >
+                    <span>📦</span> <span>Archive Tweet</span>
+                  </button>
+                )}
+
+                {/* Delete Option */}
+                {canDeleteOption && (
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      onDelete();
+                    }}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      background: "transparent",
+                      border: "none",
+                      color: "#f4212e",
+                      padding: "10px 16px",
+                      fontSize: "14px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(244, 33, 46, 0.1)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                  >
+                    <span>🗑️</span> <span>Delete Tweet</span>
+                  </button>
+                )}
+
+                {/* Copy Link Option */}
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    handleShare();
+                  }}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    background: "transparent",
+                    border: "none",
+                    color: "#71767b",
+                    padding: "10px 16px",
+                    fontSize: "14px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1d1f23")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                >
+                  <span>🔗</span> <span>Copy link to post</span>
+                </button>
+              </div>
             )}
           </div>
         )}
       </div>
 
-      {replyToHandle && (
+      {(replyToHandle || replyToName) && (
         <div style={{ fontSize: "13px", color: "#71767b", marginTop: "4px", marginBottom: "4px" }}>
-          Replying to <span style={{ color: "#1d9bf0", fontWeight: "bold" }}>@{replyToHandle.replace("@", "")}</span>
+          Replying to <span style={{ color: "#1d9bf0", fontWeight: "bold" }}>{replyToName && replyToHandle ? `${replyToName} (@${replyToHandle.replace("@", "")})` : `@${(replyToHandle || "").replace("@", "")}`}</span>
         </div>
       )}
 
@@ -384,7 +508,7 @@ export default function Tweet({
           </div>
         </form>
       ) : (
-        <p style={{ marginTop: "10px", marginBottom: "10px", wordBreak: "break-word" }}>{currentText}</p>
+        currentText ? <p style={{ marginTop: "10px", marginBottom: "10px", wordBreak: "break-word" }}>{currentText}</p> : null
       )}
 
       {image && (

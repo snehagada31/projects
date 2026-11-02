@@ -59,8 +59,13 @@ class ReferencedPost(CamelModel):
     """Only present on a repost's detail response, so clients don't have
     to separately fetch the original post being reposted."""
     id: str
-    text: str | None
+    text: str | None = None
     author: AuthorSummary
+    media: list[MediaItem] = []
+    created_at: str | None = None
+    like_count: int = 0
+    reply_count: int = 0
+    retweet_count: int = 0
 
 
 class PostItem(CamelModel):
@@ -78,7 +83,9 @@ class PostItem(CamelModel):
     retweet_count: int = 0
     reply_to_id: str | None = None
     reply_to_handle: str | None = None
+    reply_to_name: str | None = None
     repost_of_id: str | None = None
+    referenced_post: ReferencedPost | None = None
 
 
 class PostDetailResponse(CamelModel):

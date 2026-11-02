@@ -136,6 +136,52 @@ export async function revokeOtherSessions() {
   return res.json();
 }
 
+function mapPostItem(item) {
+  const ref = item.referencedPost || item.referenced_post;
+  const mappedRef = ref
+    ? {
+        id: ref.id,
+        text: ref.text,
+        authorId: ref.author?.id,
+        author: ref.author?.displayName || ref.author?.handle || "User",
+        handle: "@" + (ref.author?.handle || "user").replace("@", ""),
+        authorAvatar: ref.author?.avatar?.smallUrl || ref.author?.avatar?.largeUrl || null,
+        image: ref.media?.[0]?.largeUrl || ref.media?.[0]?.smallUrl || null,
+        media: ref.media || [],
+        like_count: ref.likeCount ?? ref.like_count ?? 0,
+        comment_count: ref.replyCount ?? ref.reply_count ?? 0,
+        retweet_count: ref.retweetCount ?? ref.retweet_count ?? 0,
+        created_at: ref.createdAt || ref.created_at || null,
+      }
+    : null;
+
+  return {
+    id: item.id,
+    authorId: item.author?.id,
+    author: item.author?.displayName || item.author?.handle || "User",
+    handle: "@" + (item.author?.handle || "user").replace("@", ""),
+    authorAvatar: item.author?.avatar?.smallUrl || item.author?.avatar?.largeUrl || null,
+    text: item.text,
+    image: item.media?.[0]?.largeUrl || item.media?.[0]?.smallUrl || null,
+    media: item.media || [],
+    like_count: item.likeCount ?? item.like_count ?? 0,
+    comment_count: item.replyCount ?? item.reply_count ?? 0,
+    retweet_count: item.retweetCount ?? item.retweet_count ?? 0,
+    liked_by_viewer: item.likedByViewer ?? item.liked_by_viewer ?? false,
+    reposted_by_viewer: item.repostedByViewer ?? item.reposted_by_viewer ?? false,
+    bookmarked_by_viewer: item.bookmarkedByViewer ?? item.bookmarked_by_viewer ?? false,
+    created_at: item.createdAt || item.created_at,
+    kind: item.kind || "original",
+    reply_to_id: item.replyToId || item.reply_to_id || null,
+    reply_to_handle: item.replyToHandle || item.reply_to_handle || null,
+    replyToHandle: item.replyToHandle || item.reply_to_handle || null,
+    reply_to_name: item.replyToName || item.reply_to_name || null,
+    replyToName: item.replyToName || item.reply_to_name || null,
+    repost_of_id: item.repostOfId || item.repost_of_id || null,
+    referencedPost: mappedRef,
+  };
+}
+
 // --- Feed (Personalized when logged in, Public when guest) ---
 export async function fetchFeed(cursor, limit = 10) {
   const isRealCursor = cursor && typeof cursor === "string" && cursor !== "0";
@@ -150,24 +196,7 @@ export async function fetchFeed(cursor, limit = 10) {
   const data = await res.json();
 
   return {
-    posts: (data.items || []).map((item) => ({
-      id: item.id,
-      authorId: item.author?.id,
-      author: item.author?.displayName || item.author?.handle || "User",
-      handle: "@" + (item.author?.handle || "user"),
-      authorAvatar: item.author?.avatar?.smallUrl || item.author?.avatar?.largeUrl || null,
-      text: item.text,
-      image: item.media?.[0]?.largeUrl || item.media?.[0]?.smallUrl || null,
-      like_count: item.likeCount ?? 0,
-      comment_count: item.replyCount ?? 0,
-      retweet_count: item.retweetCount ?? 0,
-      liked_by_viewer: item.likedByViewer ?? false,
-      reposted_by_viewer: item.repostedByViewer ?? false,
-      bookmarked_by_viewer: item.bookmarkedByViewer ?? false,
-      reply_to_id: item.replyToId || item.reply_to_id || null,
-      reply_to_handle: item.replyToHandle || item.reply_to_handle || null,
-      created_at: item.createdAt,
-    })),
+    posts: (data.items || []).map(mapPostItem),
     next_cursor: data.nextCursor,
     has_more: data.hasMore,
   };
@@ -356,6 +385,15 @@ export async function searchPosts(query, cursor = null, limit = 10) {
       bookmarked_by_viewer: item.bookmarkedByViewer ?? false,
       reply_to_id: item.replyToId || item.reply_to_id || null,
       reply_to_handle: item.replyToHandle || item.reply_to_handle || null,
+      repost_of_id: item.repostOfId || item.repost_of_id || null,
+      kind: item.kind,
+      referencedPost: item.referencedPost ? {
+        id: item.referencedPost.id,
+        text: item.referencedPost.text,
+        author: item.referencedPost.author?.displayName || item.referencedPost.author?.handle || "User",
+        handle: "@" + (item.referencedPost.author?.handle || "user"),
+        authorAvatar: item.referencedPost.author?.avatar?.smallUrl || item.referencedPost.author?.avatar?.largeUrl || null,
+      } : null,
       created_at: item.createdAt,
     })),
     next_cursor: data.nextCursor,
@@ -383,22 +421,7 @@ export async function fetchUserPosts(userId, kind = null) {
   const res = await fetch(url, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error("Failed to fetch user posts");
   const data = await res.json();
-  return (data.items || []).map((item) => ({
-    id: item.id,
-    authorId: item.author?.id,
-    author: item.author?.displayName || item.author?.handle || "User",
-    handle: "@" + (item.author?.handle || "user"),
-    authorAvatar: item.author?.avatar?.smallUrl || item.author?.avatar?.largeUrl || null,
-    text: item.text,
-    image: item.media?.[0]?.largeUrl || item.media?.[0]?.smallUrl || null,
-    like_count: item.likeCount ?? 0,
-    comment_count: item.replyCount ?? 0,
-    retweet_count: item.retweetCount ?? 0,
-    liked_by_viewer: item.likedByViewer ?? false,
-    reposted_by_viewer: item.repostedByViewer ?? false,
-    bookmarked_by_viewer: item.bookmarkedByViewer ?? false,
-    created_at: item.createdAt,
-  }));
+  return (data.items || []).map(mapPostItem);
 }
 
 export async function updateMyProfile(profileData) {
