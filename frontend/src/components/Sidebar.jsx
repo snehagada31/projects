@@ -76,8 +76,16 @@ export default function Sidebar({
             >
               <img
                 className="avatar"
-                src={currentUser.avatar?.smallUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.handle}`}
+                src={
+                  currentUser.avatar?.smallUrl && !currentUser.avatar.smallUrl.startsWith("/fixtures")
+                    ? currentUser.avatar.smallUrl
+                    : `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.handle}`
+                }
                 alt=""
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.handle}`;
+                }}
                 style={{ width: "40px", height: "40px", borderRadius: "50%" }}
               />
               <div className="tweet-author-info">

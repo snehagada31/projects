@@ -265,9 +265,11 @@ export default function ProfileView({
     return <p style={{ padding: "20px", color: "#71767b" }}>Loading profile...</p>;
   }
 
+  const fallbackAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.handle}`;
   const avatarUrl =
-    profile?.avatar?.largeUrl ||
-    `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.handle}`;
+    profile?.avatar?.largeUrl && !profile.avatar.largeUrl.startsWith("/fixtures")
+      ? profile.avatar.largeUrl
+      : fallbackAvatar;
 
   return (
     <div style={{ padding: "16px" }}>
@@ -283,6 +285,10 @@ export default function ProfileView({
       >
         <img
           src={avatarUrl}
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = fallbackAvatar;
+          }}
           alt=""
           style={{
             width: "100px",

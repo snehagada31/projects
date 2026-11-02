@@ -245,15 +245,25 @@ export default function Tweet({
     }
   }
 
+  const fallbackAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(handle || author || "user")}`;
   const avatarSrc =
-    authorAvatar ||
-    `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(handle || author)}`;
+    authorAvatar && !authorAvatar.startsWith("/fixtures") && !authorAvatar.includes("/fixtures/")
+      ? authorAvatar
+      : fallbackAvatar;
 
   return (
     <article className={`tweet${isReply ? " tweet--reply" : ""}`}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
         <div className="tweet-author">
-          <img className="avatar" src={avatarSrc} alt="" />
+          <img
+            className="avatar"
+            src={avatarSrc}
+            alt=""
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = fallbackAvatar;
+            }}
+          />
           <div className="tweet-author-info">
             <span>{author}</span>
             <span>{handle}</span>
@@ -517,6 +527,9 @@ export default function Tweet({
           src={image}
           alt=""
           onClick={() => onImageClick && onImageClick(image)}
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+          }}
           style={{ cursor: "pointer" }}
         />
       )}

@@ -1,4 +1,19 @@
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
+export const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
+
+export function resolveAvatarUrl(url, seed = "user") {
+  if (!url || typeof url !== "string" || url.startsWith("/fixtures") || url.includes("/fixtures/")) {
+    return `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(seed || "user")}`;
+  }
+  return url;
+}
+
+export function resolveImageUrl(url) {
+  if (!url || typeof url !== "string") return null;
+  if (url.startsWith("http://localhost:8000") || url.startsWith("http://127.0.0.1:8000")) {
+    return url.replace(/^http:\/\/(localhost|127\.0\.0\.1):8000/, API_BASE);
+  }
+  return url;
+}
 
 // --- Token & Auth Helpers ---
 export function getToken() {
@@ -137,6 +152,8 @@ export async function revokeOtherSessions() {
 }
 
 function mapPostItem(item) {
+  const authorHandle = item.author?.handle || "user";
+  const authorDisplay = item.author?.displayName || authorHandle;
   const ref = item.referencedPost || item.referenced_post;
   const mappedRef = ref
     ? {
@@ -145,8 +162,8 @@ function mapPostItem(item) {
         authorId: ref.author?.id,
         author: ref.author?.displayName || ref.author?.handle || "User",
         handle: "@" + (ref.author?.handle || "user").replace("@", ""),
-        authorAvatar: ref.author?.avatar?.smallUrl || ref.author?.avatar?.largeUrl || null,
-        image: ref.media?.[0]?.largeUrl || ref.media?.[0]?.smallUrl || null,
+        authorAvatar: resolveAvatarUrl(ref.author?.avatar?.smallUrl || ref.author?.avatar?.largeUrl, ref.author?.handle),
+        image: resolveImageUrl(ref.media?.[0]?.largeUrl || ref.media?.[0]?.smallUrl),
         media: ref.media || [],
         like_count: ref.likeCount ?? ref.like_count ?? 0,
         comment_count: ref.replyCount ?? ref.reply_count ?? 0,
@@ -158,11 +175,11 @@ function mapPostItem(item) {
   return {
     id: item.id,
     authorId: item.author?.id,
-    author: item.author?.displayName || item.author?.handle || "User",
-    handle: "@" + (item.author?.handle || "user").replace("@", ""),
-    authorAvatar: item.author?.avatar?.smallUrl || item.author?.avatar?.largeUrl || null,
+    author: authorDisplay,
+    handle: "@" + authorHandle.replace("@", ""),
+    authorAvatar: resolveAvatarUrl(item.author?.avatar?.smallUrl || item.author?.avatar?.largeUrl, authorHandle),
     text: item.text,
-    image: item.media?.[0]?.largeUrl || item.media?.[0]?.smallUrl || null,
+    image: resolveImageUrl(item.media?.[0]?.largeUrl || item.media?.[0]?.smallUrl),
     media: item.media || [],
     like_count: item.likeCount ?? item.like_count ?? 0,
     comment_count: item.replyCount ?? item.reply_count ?? 0,

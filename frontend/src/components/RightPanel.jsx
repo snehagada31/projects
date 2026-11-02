@@ -85,8 +85,16 @@ export default function RightPanel({ searchQuery, onSearchChange, currentUser = 
           <div className="follow-suggestion" key={p.id}>
             <img
               className="avatar avatar--sm"
-              src={p.avatar?.smallUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.displayName)}`}
+              src={
+                p.avatar?.smallUrl && !p.avatar.smallUrl.startsWith("/fixtures")
+                  ? p.avatar.smallUrl
+                  : `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.handle || p.displayName)}`
+              }
               alt=""
+              onError={(e) => {
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.handle || p.displayName)}`;
+              }}
             />
             <div className="tweet-author-info">
               <span>{p.displayName}</span>
