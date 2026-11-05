@@ -625,3 +625,12 @@ export async function reportPost(postId, reason, notes = "") {
   }
   return res.json();
 }
+
+// --- Trending Topics ---
+export async function fetchTrendingTopics() {
+  const res = await fetch(`${API_BASE}/trends`);
+  if (!res.ok) {
+    throw new Error("Failed to fetch trending topics");
+  }
+  return res.json();
+}

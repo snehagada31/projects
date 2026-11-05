@@ -644,3 +644,11 @@ async def report_post(
         report_id, status_val = str(uuid.uuid4()), "pending"
 
     return ReportPostResponse(success=True, report_id=report_id, status=status_val)
+
+
+@router.get("/trends")
+async def get_trending_topics(
+    repo: SocialRepository = Depends(get_social_repository),
+):
+    trends = await maybe_await(repo.get_trending_topics(limit=5))
+    return {"trends": trends}

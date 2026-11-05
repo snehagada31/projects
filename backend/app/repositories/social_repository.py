@@ -27,6 +27,7 @@ class SocialRepository(Protocol):
     def create_post(self, author_id: str, kind: str, text: str | None, reply_to_id: str | None, repost_of_id: str | None) -> dict: ...
     def search_originals(self, query: str) -> list[dict]: ...
     def get_user_media(self, user_id: str) -> list[dict]: ...
+    def get_trending_topics(self, limit: int = 5) -> list[dict]: ...
 
 
 class FixtureSocialRepository:
@@ -263,3 +264,34 @@ class FixtureSocialRepository:
             self.media.append(entry)
             added.append(entry)
         return added
+
+    def get_trending_topics(self, limit: int = 5) -> list[dict]:
+        import re
+        from collections import Counter
+        counts = Counter()
+        for p in self.all_posts:
+            t = p.get("text")
+            if t:
+                for tag in re.findall(r"#[A-Za-z0-9_]+", t):
+                    counts[tag] += 1
+        trends = []
+        for tag, count in counts.most_common(limit):
+            trends.append({
+                "category": "Trending in Tech",
+                "title": tag,
+                "meta": f"{count} post{'s' if count != 1 else ''}",
+            })
+        fallbacks = [
+            {"category": "Technology · Trending", "title": "#AsyncPython", "meta": "12.4K posts"},
+            {"category": "Programming · Trending", "title": "#FastAPI", "meta": "8,201 posts"},
+            {"category": "Trending in India", "title": "#100DaysOfCode", "meta": "45.2K posts"},
+            {"category": "Web Dev · Trending", "title": "#ReactJS", "meta": "23.1K posts"},
+            {"category": "Database · Trending", "title": "#PostgreSQL", "meta": "15.8K posts"},
+        ]
+        existing = {x["title"].lower() for x in trends}
+        for f in fallbacks:
+            if len(trends) >= limit:
+                break
+            if f["title"].lower() not in existing:
+                trends.append(f)
+        return trends

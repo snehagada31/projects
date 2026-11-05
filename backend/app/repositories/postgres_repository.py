@@ -959,3 +959,44 @@ class PostgresSocialRepository:
             created_media.append(pm)
         await self.session.commit()
         return created_media
+
+    async def get_trending_topics(self, limit: int = 5) -> list[dict]:
+        import re
+        from collections import Counter
+        stmt = (
+            select(Post.text)
+            .where(Post.text.is_not(None))
+            .order_by(Post.created_at.desc())
+            .limit(200)
+        )
+        res = await self.session.execute(stmt)
+        rows = res.scalars().all()
+
+        counts = Counter()
+        for text in rows:
+            if text:
+                for tag in re.findall(r"#[A-Za-z0-9_]+", text):
+                    counts[tag] += 1
+
+        trends = []
+        for tag, count in counts.most_common(limit):
+            trends.append({
+                "category": "Trending in Tech",
+                "title": tag,
+                "meta": f"{count} post{'s' if count != 1 else ''}",
+            })
+
+        fallbacks = [
+            {"category": "Technology · Trending", "title": "#AsyncPython", "meta": "12.4K posts"},
+            {"category": "Programming · Trending", "title": "#FastAPI", "meta": "8,201 posts"},
+            {"category": "Trending in India", "title": "#100DaysOfCode", "meta": "45.2K posts"},
+            {"category": "Web Dev · Trending", "title": "#ReactJS", "meta": "23.1K posts"},
+            {"category": "Database · Trending", "title": "#PostgreSQL", "meta": "15.8K posts"},
+        ]
+        existing = {x["title"].lower() for x in trends}
+        for f in fallbacks:
+            if len(trends) >= limit:
+                break
+            if f["title"].lower() not in existing:
+                trends.append(f)
+        return trends

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   fetchUserProfile,
   updateMyProfile,
@@ -58,6 +58,47 @@ export default function ProfileView({
   const [revokingSessionId, setRevokingSessionId] = useState(null);
   const [revokingOthers, setRevokingOthers] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
+
+  const avatarInputRef = useRef(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  async function handleAvatarUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select a valid image file (JPG, PNG, WebP).");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("File is too large. Please select an image under 5MB.");
+      return;
+    }
+
+    setUploadingAvatar(true);
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      try {
+        const base64String = reader.result;
+        const res = await updateMyProfile({
+          avatar_small_url: base64String,
+          avatar_large_url: base64String,
+        });
+        const updated = res.item;
+        setProfile(updated);
+        if (onUserUpdated) onUserUpdated(updated);
+        alert("Avatar uploaded successfully! Saved as Base64 string in database.");
+      } catch (err) {
+        console.error("Avatar upload failed:", err);
+        alert("Failed to upload avatar: " + err.message);
+      } finally {
+        setUploadingAvatar(false);
+        if (avatarInputRef.current) avatarInputRef.current.value = "";
+      }
+    };
+    reader.readAsDataURL(file);
+  }
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -283,25 +324,91 @@ export default function ProfileView({
           marginBottom: "60px",
         }}
       >
-        <img
-          src={avatarUrl}
-          onError={(e) => {
-            e.currentTarget.onerror = null;
-            e.currentTarget.src = fallbackAvatar;
-          }}
-          alt=""
+        <div
           style={{
-            width: "100px",
-            height: "100px",
-            borderRadius: "50%",
-            border: "4px solid #000",
             position: "absolute",
             bottom: "-40px",
             left: "20px",
-            background: "#000",
+            width: "100px",
+            height: "100px",
           }}
+        >
+          <img
+            src={avatarUrl}
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = fallbackAvatar;
+            }}
+            alt="Profile Avatar"
+            style={{
+              width: "100px",
+              height: "100px",
+              borderRadius: "50%",
+              border: "4px solid #000",
+              background: "#000",
+              objectFit: "cover",
+              display: "block",
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => avatarInputRef.current?.click()}
+            disabled={uploadingAvatar}
+            title="Upload new profile photo (Base64 in DB)"
+            style={{
+              position: "absolute",
+              bottom: "0px",
+              right: "0px",
+              background: "#1d9bf0",
+              border: "2px solid #000",
+              borderRadius: "50%",
+              width: "32px",
+              height: "32px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: uploadingAvatar ? "not-allowed" : "pointer",
+              color: "#fff",
+              fontSize: "14px",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.6)",
+            }}
+          >
+            {uploadingAvatar ? "⏳" : "📷"}
+          </button>
+        </div>
+
+        <input
+          type="file"
+          ref={avatarInputRef}
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={handleAvatarUpload}
         />
+
         <div style={{ position: "absolute", bottom: "-40px", right: "20px", display: "flex", gap: "10px", alignItems: "center" }}>
+          <button
+            type="button"
+            onClick={() => avatarInputRef.current?.click()}
+            disabled={uploadingAvatar}
+            title="Upload profile picture (Saved as Base64 in PostgreSQL)"
+            style={{
+              background: "#1d9bf0",
+              border: "none",
+              color: "#fff",
+              fontWeight: "bold",
+              borderRadius: "999px",
+              padding: "8px 16px",
+              cursor: uploadingAvatar ? "not-allowed" : "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              fontSize: "13px",
+            }}
+          >
+            <span>📷</span>
+            <span>{uploadingAvatar ? "Uploading..." : "Upload Photo"}</span>
+          </button>
+
           <button
             onClick={() => setShowSessionsModal(true)}
             title="Active Login Sessions (Manage Devices)"

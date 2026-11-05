@@ -1,14 +1,25 @@
 import { useState, useEffect } from "react";
-import { fetchUsers, fetchUserSuggestions, followUser, unfollowUser } from "../api.js";
+import { fetchUsers, fetchUserSuggestions, followUser, unfollowUser, fetchTrendingTopics } from "../api.js";
 
-const TRENDS = [
+const DEFAULT_TRENDS = [
   { category: "Technology · Trending", title: "#AsyncPython", meta: "12.4K posts" },
-  { category: "Programming · Trending", title: "FastAPI", meta: "8,201 posts" },
+  { category: "Programming · Trending", title: "#FastAPI", meta: "8,201 posts" },
   { category: "Trending in India", title: "#100DaysOfCode", meta: "45.2K posts" },
 ];
 
 export default function RightPanel({ searchQuery, onSearchChange, currentUser = null, onRequireAuth = null, onFollowChange = null }) {
   const [users, setUsers] = useState([]);
+  const [trends, setTrends] = useState(DEFAULT_TRENDS);
+
+  useEffect(() => {
+    fetchTrendingTopics()
+      .then((data) => {
+        if (data?.trends && data.trends.length > 0) {
+          setTrends(data.trends);
+        }
+      })
+      .catch((err) => console.error("Failed to load trending topics:", err));
+  }, []);
 
   useEffect(() => {
     fetchUserSuggestions(5)
@@ -69,14 +80,20 @@ export default function RightPanel({ searchQuery, onSearchChange, currentUser = 
 
       <div className="right-panel__box">
         <h2>What's happening</h2>
-        {TRENDS.map((t) => (
-          <div className="trend" key={t.title}>
+        {trends.map((t) => (
+          <div
+            className="trend"
+            key={t.title}
+            onClick={() => onSearchChange && onSearchChange(t.title)}
+            style={{ cursor: "pointer" }}
+            title={`Search posts for ${t.title}`}
+          >
             <span className="trend__category">{t.category}</span>
             <span className="trend__title">{t.title}</span>
             <span className="trend__meta">{t.meta}</span>
           </div>
         ))}
-        <a href="#" className="show-more">Show more</a>
+        <a href="#" className="show-more" onClick={(e) => { e.preventDefault(); if (trends[0]) onSearchChange(trends[0].title); }}>Show more</a>
       </div>
 
       <div className="right-panel__box">
