@@ -79,21 +79,60 @@ export default function RightPanel({ searchQuery, onSearchChange, currentUser = 
       </div>
 
       <div className="right-panel__box">
-        <h2>What's happening</h2>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+          <h2 style={{ margin: 0, fontSize: "18px" }}>What's happening</h2>
+          <span
+            style={{
+              fontSize: "11px",
+              fontWeight: "700",
+              background: "rgba(29, 155, 240, 0.15)",
+              color: "#1d9bf0",
+              padding: "2px 8px",
+              borderRadius: "999px",
+              letterSpacing: "0.5px",
+            }}
+          >
+            ● LIVE NEWS
+          </span>
+        </div>
         {trends.map((t) => (
           <div
             className="trend"
             key={t.title}
-            onClick={() => onSearchChange && onSearchChange(t.title)}
+            onClick={() => {
+              if (t.url) {
+                window.open(t.url, "_blank", "noopener,noreferrer");
+              } else if (onSearchChange) {
+                onSearchChange(t.title);
+              }
+            }}
             style={{ cursor: "pointer" }}
-            title={`Search posts for ${t.title}`}
+            title={t.url ? `Read full article: ${t.title}` : `Search posts for ${t.title}`}
           >
-            <span className="trend__category">{t.category}</span>
-            <span className="trend__title">{t.title}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span className="trend__category">{t.category}</span>
+              {t.url && <span style={{ fontSize: "12px", color: "#71767b" }}>↗</span>}
+            </div>
+            <span className="trend__title" style={{ fontSize: "14px", lineHeight: "1.3", margin: "2px 0 4px" }}>
+              {t.title}
+            </span>
             <span className="trend__meta">{t.meta}</span>
           </div>
         ))}
-        <a href="#" className="show-more" onClick={(e) => { e.preventDefault(); if (trends[0]) onSearchChange(trends[0].title); }}>Show more</a>
+        <a
+          href="#"
+          className="show-more"
+          onClick={(e) => {
+            e.preventDefault();
+            if (trends[0]?.url) {
+              window.open("https://news.ycombinator.com", "_blank", "noopener,noreferrer");
+            } else if (trends[0] && onSearchChange) {
+              onSearchChange(trends[0].title);
+            }
+          }}
+        >
+          Explore more live news →
+        </a>
       </div>
 
       <div className="right-panel__box">
